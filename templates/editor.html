@@ -237,8 +237,19 @@
             </div>
             
             <!-- Область просмотра документа -->
-            <div class="document-view" id="documentView">
-                <div class="text-center text-muted" style="margin-top: 100px;">
+            <div class="document-view">
+                <div class="toolbar" style="background: #f8f9fa; padding: 10px; border-bottom: 1px solid #dee2e6; display: flex; align-items: center; gap: 15px;">
+                    <button id="prev" class="btn btn-outline-secondary btn-sm">←</button>
+                    <span id="pageInfo" class="text-muted">Загрузите PDF для начала работы</span>
+                    <button id="next" class="btn btn-outline-secondary btn-sm">→</button>
+                    <button id="zoomOut" class="btn btn-outline-secondary btn-sm">−</button>
+                    <button id="zoomIn" class="btn btn-outline-secondary btn-sm">+</button>
+                </div>
+                
+                <!-- Контейнер со страницами -->
+                <div id="pages" style="display:flex; flex-direction:column; gap:24px; padding: 20px; overflow-y: auto; height: calc(100vh - 200px);"></div>
+                
+                <div id="documentView" class="text-center text-muted" style="margin-top: 100px; display: block;">
                     <i class="fas fa-file-pdf fa-4x mb-3"></i>
                     <h5>Загрузите PDF документ для редактирования</h5>
                     <p>Перетащите файл в область слева или нажмите на неё</p>
@@ -249,19 +260,34 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="{{ url_for('static', filename='js/keep-alive.js') }}"></script>
-    <script>
-        let selectedSeal = 'falcon';
-        let sealSize = 150;
-        let sealOpacity = 100;
+    <script type="module">
+        import * as pdfjsLib from 'https://unpkg.com/pdfjs-dist@4.6.82/build/pdf.mjs';
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@4.6.82/build/pdf.worker.mjs';
+
+        const pagesRoot = document.getElementById('pages');
+        const pageInfo = document.getElementById('pageInfo');
+        const documentView = document.getElementById('documentView');
+
+        // Состояние
+        let pdfDoc = null;
+        let scale = 1.5;
+        let pageIndex = 0; // 0-based
         let currentDocument = null;
-        let selectedElement = null;
-        
+        let selectedSeal = 'falcon';
+        let sealSize = 120;
+        let sealOpacity = 100;
+        const dpr = window.devicePixelRatio || 1;
+
+        // Массив печатей в PT: { pageIndex, xPt, yPt, wPt, hPt, type, opacity }
+        const seals = [];
+
         // Инициализация
         document.addEventListener('DOMContentLoaded', function() {
             initializeUpload();
             initializeControls();
+            initializeNavigation();
         });
-        
+
         // Инициализация загрузки
         function initializeUpload() {
             const uploadArea = document.getElementById('documentUpload');
@@ -289,100 +315,58 @@
                 }
             });
         }
-        
+
         // Инициализация контролов
         function initializeControls() {
             const sizeSlider = document.getElementById('sealSize');
             const opacitySlider = document.getElementById('sealOpacity');
             
             sizeSlider.addEventListener('input', (e) => {
-                sealSize = e.target.value;
+                sealSize = parseInt(e.target.value);
                 document.getElementById('sizeValue').textContent = sealSize + 'px';
-                updateSelectedElement();
             });
             
             opacitySlider.addEventListener('input', (e) => {
-                sealOpacity = e.target.value;
+                sealOpacity = parseInt(e.target.value);
                 document.getElementById('opacityValue').textContent = sealOpacity + '%';
-                updateSelectedElement();
             });
         }
-        
-        // Обработка загрузки документа
-        function handleDocumentUpload(event) {
-            const file = event.target.files[0];
-            if (file && file.type === 'application/pdf') {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    displayDocument(e.target.result);
-                    currentDocument = e.target.result; // Сохраняем data URL
-                };
-                reader.readAsDataURL(file);
-            }
-        }
-        
-        // Отображение документа с PDF.js
-        async function displayDocument(dataUrl) {
-            const documentView = document.getElementById('documentView');
-            documentView.innerHTML = '<div class="pdf-container" style="position: relative; width: 100%;"></div>';
-            
-            try {
-                // Загружаем PDF
-                const loadingTask = pdfjsLib.getDocument(dataUrl);
-                const pdf = await loadingTask.promise;
-                
-                const container = document.querySelector('.pdf-container');
-                container.innerHTML = ''; // Очищаем контейнер
-                
-                // Рендерим каждую страницу
-                for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-                    const page = await pdf.getPage(pageNum);
-                    
-                    // Создаем canvas для страницы
-                    const canvas = document.createElement('canvas');
-                    const context = canvas.getContext('2d');
-                    
-                    // Устанавливаем масштаб для отображения
-                    const viewport = page.getViewport({ scale: 1.0 });
-                    const scale = 800 / viewport.width; // Фиксированная ширина 800px
-                    const scaledViewport = page.getViewport({ scale: scale });
-                    
-                    canvas.width = scaledViewport.width;
-                    canvas.height = scaledViewport.height;
-                    
-                    // Рендерим страницу
-                    await page.render({
-                        canvasContext: context,
-                        viewport: scaledViewport
-                    }).promise;
-                    
-                    // Создаем контейнер для страницы
-                    const pageContainer = document.createElement('div');
-                    pageContainer.className = 'pdf-page';
-                    pageContainer.dataset.pageIndex = pageNum - 1; // 0-based индекс
-                    pageContainer.style.position = 'relative';
-                    pageContainer.style.marginBottom = '20px';
-                    pageContainer.style.border = '1px solid #ccc';
-                    pageContainer.style.backgroundColor = 'white';
-                    pageContainer.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
-                    
-                    // Добавляем canvas в контейнер страницы
-                    pageContainer.appendChild(canvas);
-                    
-                    // Добавляем страницу в основной контейнер
-                    container.appendChild(pageContainer);
+
+        // Инициализация навигации
+        function initializeNavigation() {
+            document.getElementById('zoomIn').onclick = async () => {
+                scale = Math.min(scale + 0.25, 4);
+                if (pdfDoc) {
+                    for (let i = 0; i < pdfDoc.numPages; i++) {
+                        await renderPage(i);
+                    }
+                    updatePageInfo();
                 }
-                
-                console.log(`DEBUG: Загружено ${pdf.numPages} страниц PDF`);
-                
-            } catch (error) {
-                console.error('Ошибка при загрузке PDF:', error);
-                documentView.innerHTML = '<div class="alert alert-danger">Ошибка при загрузке PDF</div>';
-            }
+            };
+            
+            document.getElementById('zoomOut').onclick = async () => {
+                scale = Math.max(scale - 0.25, 0.5);
+                if (pdfDoc) {
+                    for (let i = 0; i < pdfDoc.numPages; i++) {
+                        await renderPage(i);
+                    }
+                    updatePageInfo();
+                }
+            };
+            
+            document.getElementById('prev').onclick = () => {
+                const el = pagesRoot.querySelector(`[data-page-index="${Math.max(--pageIndex, 0)}"]`);
+                el?.scrollIntoView({ behavior: 'smooth' });
+            };
+            
+            document.getElementById('next').onclick = () => {
+                const el = pagesRoot.querySelector(`[data-page-index="${Math.min(++pageIndex, pdfDoc.numPages - 1)}"]`);
+                el?.scrollIntoView({ behavior: 'smooth' });
+            };
         }
-        
+
         // Выбор печати
-        function selectSeal(type) {
+        window.selectSeal = function(type) {
             selectedSeal = type;
             
             // Обновляем визуальное выделение
@@ -390,285 +374,227 @@
                 el.style.borderColor = '#dee2e6';
             });
             event.target.closest('.seal-preview').style.borderColor = '#007bff';
+        };
+
+        // Обработка загрузки документа
+        async function handleDocumentUpload(event) {
+            const file = event.target.files[0];
+            if (!file || !file.type.includes('pdf')) {
+                alert('Пожалуйста, выберите PDF файл');
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                currentDocument = e.target.result;
+                await loadPDF(currentDocument);
+            };
+            reader.readAsDataURL(file);
         }
-        
-        // Добавление печати
-        function addSeal() {
-            if (!currentDocument) {
+
+        // Загрузка PDF
+        async function loadPDF(dataUrl) {
+            try {
+                // Скрываем приветственное сообщение
+                documentView.style.display = 'none';
+                
+                // Очищаем контейнер страниц
+                pagesRoot.innerHTML = '';
+                seals.length = 0; // Очищаем массив печатей
+                
+                // Загружаем PDF
+                pdfDoc = await pdfjsLib.getDocument(dataUrl).promise;
+                
+                // Рендерим все страницы
+                for (let i = 0; i < pdfDoc.numPages; i++) {
+                    await renderPage(i);
+                }
+                
+                updatePageInfo();
+                console.log(`DEBUG: Загружено ${pdfDoc.numPages} страниц PDF`);
+                
+            } catch (error) {
+                console.error('Ошибка при загрузке PDF:', error);
+                documentView.style.display = 'block';
+                documentView.innerHTML = '<div class="alert alert-danger">Ошибка при загрузке PDF</div>';
+            }
+        }
+
+        // Рендер одной страницы
+        async function renderPage(idx) {
+            const page = await pdfDoc.getPage(idx + 1);
+            const viewport = page.getViewport({ scale });
+            const rotation = (page.rotate || 0) % 180;
+
+            // Реальный размер страницы в pt из MediaBox, с учётом ориентации
+            const pageWidthPt = rotation ? page.view[3] : page.view[2];
+            const pageHeightPt = rotation ? page.view[2] : page.view[3];
+
+            // Контейнер страницы
+            let pageEl = pagesRoot.querySelector(`[data-page-index="${idx}"]`);
+            if (!pageEl) {
+                pageEl = document.createElement('div');
+                pageEl.className = 'pdf-page';
+                pageEl.dataset.pageIndex = String(idx);
+                pageEl.style.position = 'relative';
+                pageEl.style.width = `${viewport.width}px`;
+                pageEl.style.height = `${viewport.height}px`;
+                pageEl.style.background = '#fff';
+                pageEl.style.boxShadow = '0 0 6px rgba(0,0,0,.2)';
+                pageEl.style.margin = '0 auto';
+                pagesRoot.appendChild(pageEl);
+
+                // Холст страницы
+                const canvas = document.createElement('canvas');
+                canvas.className = 'pdf-canvas';
+                canvas.width = Math.floor(viewport.width * dpr);
+                canvas.height = Math.floor(viewport.height * dpr);
+                canvas.style.width = `${viewport.width}px`;
+                canvas.style.height = `${viewport.height}px`;
+                pageEl.appendChild(canvas);
+
+                // Прозрачный слой для кликов/перетаскивания
+                const hit = document.createElement('div');
+                hit.className = 'hit-layer';
+                hit.style.position = 'absolute';
+                hit.style.left = '0';
+                hit.style.top = '0';
+                hit.style.right = '0';
+                hit.style.bottom = '0';
+                hit.style.cursor = 'crosshair';
+                pageEl.appendChild(hit);
+
+                // Клик → добавить печать в координатах PT
+                hit.addEventListener('click', (e) => {
+                    const r = hit.getBoundingClientRect();
+                    const xCss = e.clientX - r.left;
+                    const yCss = e.clientY - r.top;
+
+                    // Размеры печати в CSS (видимые), дальше пересчитаем в pt пропорцией
+                    const cssW = sealSize, cssH = sealSize;
+
+                    // Перевод CSS → PT через соотношение размеров viewport и MediaBox
+                    const xPt = (xCss / viewport.width) * pageWidthPt;
+                    const yTopPt = (yCss / viewport.height) * pageHeightPt;
+                    const wPt = (cssW / viewport.width) * pageWidthPt;
+                    const hPt = (cssH / viewport.height) * pageHeightPt;
+                    const yPt = pageHeightPt - yTopPt - hPt;
+
+                    seals.push({
+                        pageIndex: idx,
+                        xPt, yPt, wPt, hPt,
+                        type: selectedSeal,
+                        opacity: sealOpacity / 100
+                    });
+
+                    // Визуальный маркер
+                    const marker = document.createElement('div');
+                    marker.className = 'stamp-marker';
+                    marker.style.position = 'absolute';
+                    marker.style.left = `${xCss - cssW/2}px`;
+                    marker.style.top = `${yCss - cssH/2}px`;
+                    marker.style.width = `${cssW}px`;
+                    marker.style.height = `${cssH}px`;
+                    marker.style.border = '2px dashed #0aa';
+                    marker.style.borderRadius = '8px';
+                    marker.style.pointerEvents = 'none';
+                    marker.style.backgroundColor = 'rgba(0, 170, 170, 0.1)';
+                    hit.appendChild(marker);
+
+                    console.log(`DEBUG: Добавлена печать на страницу ${idx + 1}: xPt=${xPt}, yPt=${yPt}, wPt=${wPt}, hPt=${hPt}`);
+                });
+
+                // Собственный рендер страницы (канвас)
+                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                await page.render({ canvasContext: ctx, viewport }).promise;
+
+                // Сохраняем метаданные на элемент
+                pageEl._pdf = { viewport, pageWidthPt, pageHeightPt };
+            } else {
+                // При зуме обновляем размеры и перерендер
+                const canvas = pageEl.querySelector('.pdf-canvas');
+                const hit = pageEl.querySelector('.hit-layer');
+                pageEl.style.width = `${viewport.width}px`;
+                pageEl.style.height = `${viewport.height}px`;
+
+                canvas.width = Math.floor(viewport.width * dpr);
+                canvas.height = Math.floor(viewport.height * dpr);
+                canvas.style.width = `${viewport.width}px`;
+                canvas.style.height = `${viewport.height}px`;
+
+                hit.style.width = `${viewport.width}px`;
+                hit.style.height = `${viewport.height}px`;
+
+                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                await page.render({ canvasContext: ctx, viewport }).promise;
+
+                pageEl._pdf = { viewport, pageWidthPt, pageHeightPt };
+            }
+        }
+
+        // Обновление информации о страницах
+        function updatePageInfo() {
+            if (pdfDoc) {
+                pageInfo.textContent = `Страниц: ${pdfDoc.numPages} | zoom: ${scale.toFixed(2)}×`;
+            }
+        }
+
+        // Добавление печати (для совместимости со старым кодом)
+        window.addSeal = function() {
+            if (!pdfDoc) {
                 alert('Сначала загрузите PDF документ');
                 return;
             }
-            
-            const documentView = document.getElementById('documentView');
-            let sealSrc;
-            switch(selectedSeal) {
-                case 'falcon':
-                    sealSrc = "{{ url_for('static', filename='images/falcon_seal.png') }}";
-                    break;
-                case 'falcon_signature':
-                    sealSrc = "{{ url_for('static', filename='images/falcon_signature.png') }}";
-                    break;
-                case 'ip':
-                    sealSrc = "{{ url_for('static', filename='images/ip_seal.png') }}";
-                    break;
-                case 'ip_signature':
-                    sealSrc = "{{ url_for('static', filename='images/ip_signature.png') }}";
-                    break;
-                case 'ip_seal_signature':
-                    sealSrc = "{{ url_for('static', filename='images/ip_seal_signature.png') }}";
-                    break;
-                default:
-                    sealSrc = "{{ url_for('static', filename='images/falcon_seal.png') }}";
-            }
-            
-            const sealElement = document.createElement('div');
-            sealElement.className = 'seal-element';
-            sealElement.dataset.sealType = selectedSeal;
-            sealElement.innerHTML = `
-                <img src="${sealSrc}" alt="Печать" style="width: ${sealSize}px; height: ${sealSize}px; opacity: ${sealOpacity/100};">
-                <div class="seal-controls">
-                    <button onclick="deleteSeal(this)" title="Удалить">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                    <button onclick="bringToFront(this)" title="На передний план">
-                        <i class="fas fa-layer-group"></i>
-                    </button>
-                </div>
-            `;
-            
-            // Позиционирование по центру первой страницы
-            const firstPage = document.querySelector('.pdf-page');
-            if (firstPage) {
-                const pageRect = firstPage.getBoundingClientRect();
-                const centerX = (pageRect.width - sealSize) / 2;
-                const centerY = (pageRect.height - sealSize) / 2;
-                
-                sealElement.style.left = centerX + 'px';
-                sealElement.style.top = centerY + 'px';
-                sealElement.style.transform = 'none';
-                
-                // Добавляем функциональность перетаскивания
-                makeDraggable(sealElement);
-                
-                // Добавляем печать на первую страницу
-                firstPage.appendChild(sealElement);
-            } else {
-                // Fallback если страницы не загружены
-                const container = document.getElementById('documentView');
-                const containerRect = container.getBoundingClientRect();
-                const centerX = (containerRect.width - sealSize) / 2;
-                const centerY = (containerRect.height - sealSize) / 2;
-                
-                sealElement.style.left = centerX + 'px';
-                sealElement.style.top = centerY + 'px';
-                sealElement.style.transform = 'none';
-                
-                makeDraggable(sealElement);
-                documentView.appendChild(sealElement);
-            }
-            selectElement(sealElement);
-        }
-        
-        // Сделать элемент перетаскиваемым
-        function makeDraggable(element) {
-            let isDragging = false;
-            let offsetX = 0;
-            let offsetY = 0;
-            
-            element.addEventListener('mousedown', startDragging);
-            element.addEventListener('click', (e) => {
-                e.stopPropagation();
-                selectElement(element);
-            });
-            
-            function startDragging(e) {
-                e.preventDefault();
-                
-                const rect = element.getBoundingClientRect();
-                const containerRect = document.getElementById('documentView').getBoundingClientRect();
-                
-                // Вычисляем смещение курсора относительно элемента
-                offsetX = e.clientX - rect.left;
-                offsetY = e.clientY - rect.top;
-                
-                isDragging = true;
-            }
-            
-            document.addEventListener('mousemove', drag);
-            document.addEventListener('mouseup', stopDragging);
-            
-            function drag(e) {
-                if (isDragging) {
-                    e.preventDefault();
-                    
-                    // Находим страницу, на которой находится печать
-                    const pageContainer = element.closest('.pdf-page');
-                    if (pageContainer) {
-                        const pageRect = pageContainer.getBoundingClientRect();
-                        
-                        // Вычисляем новую позицию с учетом смещения курсора
-                        let newX = e.clientX - pageRect.left - offsetX;
-                        let newY = e.clientY - pageRect.top - offsetY;
-                        
-                        // Ограничиваем позицию границами страницы
-                        const maxX = pageRect.width - element.offsetWidth;
-                        const maxY = pageRect.height - element.offsetHeight;
-                        
-                        newX = Math.max(0, Math.min(newX, maxX));
-                        newY = Math.max(0, Math.min(newY, maxY));
-                        
-                        element.style.left = newX + 'px';
-                        element.style.top = newY + 'px';
-                    }
-                }
-            }
-            
-            function stopDragging() {
-                isDragging = false;
-            }
-        }
-        
-        // Выбор элемента
-        function selectElement(element) {
-            if (selectedElement) {
-                selectedElement.classList.remove('selected');
-            }
-            selectedElement = element;
-            element.classList.add('selected');
-        }
-        
-        // Обновление выбранного элемента
-        function updateSelectedElement() {
-            if (selectedElement) {
-                const img = selectedElement.querySelector('img');
-                img.style.width = sealSize + 'px';
-                img.style.height = sealSize + 'px';
-                img.style.opacity = sealOpacity / 100;
-            }
-        }
-        
-        // Удаление печати
-        function deleteSeal(button) {
-            const element = button.closest('.seal-element');
-            element.remove();
-            selectedElement = null;
-        }
-        
-        // Перемещение на передний план
-        function bringToFront(button) {
-            const element = button.closest('.seal-element');
-            element.style.zIndex = parseInt(element.style.zIndex || 1000) + 1;
-        }
-        
+            alert('Кликните на страницу, где хотите поставить печать');
+        };
+
         // Сохранение документа
-        function saveDocument() {
-            if (!currentDocument) {
-                alert('Нет документа для сохранения');
+        window.saveDocument = async function() {
+            if (!currentDocument || seals.length === 0) {
+                alert('Нет документа или печатей для сохранения');
                 return;
             }
-            
-            // Собираем данные о печатях
-            const seals = [];
-            const sealElements = document.querySelectorAll('.seal-element');
-            
-            console.log(`DEBUG: Найдено ${sealElements.length} печатей`);
-            
-            sealElements.forEach((element, index) => {
-                // Находим страницу, на которой находится печать
-                const pageContainer = element.closest('.pdf-page');
-                if (!pageContainer) {
-                    console.warn(`DEBUG: Печать ${index + 1} не найдена на странице`);
-                    return;
-                }
-                
-                const pageIndex = parseInt(pageContainer.dataset.pageIndex);
-                const pageRect = pageContainer.getBoundingClientRect();
-                const rect = element.getBoundingClientRect();
-                
-                // Вычисляем позицию относительно страницы
-                const xPx = rect.left - pageRect.left;
-                const yPx = rect.top - pageRect.top;
-                const wPx = rect.width;
-                const hPx = rect.height;
-                
-                // Получаем размеры страницы в пикселях
-                const pageWidthPx = pageRect.width;
-                const pageHeightPx = pageRect.height;
-                
-                // Получаем тип печати и прозрачность
-                const img = element.querySelector('img');
-                const opacity = parseFloat(img.style.opacity || 1);
-                const sealType = element.dataset.sealType || 'falcon';
-                
-                console.log(`DEBUG: Печать ${index + 1}: pageIndex=${pageIndex}, xPx=${xPx}, yPx=${yPx}, wPx=${wPx}, hPx=${hPx}, pageWidthPx=${pageWidthPx}, pageHeightPx=${pageHeightPx}, тип=${sealType}`);
-                
-                seals.push({
-                    pageIndex: pageIndex,
-                    xPx: xPx,
-                    yPx: yPx,
-                    wPx: wPx,
-                    hPx: hPx,
-                    pageWidthPx: pageWidthPx,
-                    pageHeightPx: pageHeightPx,
-                    opacity: opacity,
-                    type: sealType
-                });
-            });
-            
+
             console.log(`DEBUG: Отправляем ${seals.length} печатей на сервер`);
-            
+
             // Показываем индикатор загрузки
             const saveButton = document.querySelector('button[onclick="saveDocument()"]');
             const originalText = saveButton.textContent;
             saveButton.textContent = 'Сохранение...';
             saveButton.disabled = true;
-            
-            // Отправляем данные на сервер
-            fetch('/save-document', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    pdfData: currentDocument,
-                    seals: seals
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // Создаем ссылку для скачивания
-                    const link = document.createElement('a');
-                    link.href = data.pdfData;
-                    link.download = data.filename;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    
-                    alert('Документ успешно сохранен!');
-                } else {
-                    alert('Ошибка при сохранении: ' + (data.error || 'Неизвестная ошибка'));
+
+            try {
+                const payload = { pdfData: currentDocument, seals };
+
+                const r = await fetch('/save-document', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                const json = await r.json();
+                if (!json.success) {
+                    alert(json.error || 'Ошибка сохранения');
+                    return;
                 }
-            })
-            .catch(error => {
+                
+                const a = document.createElement('a');
+                a.href = json.pdfData;
+                a.download = json.filename || 'document_with_seals.pdf';
+                a.click();
+                
+                alert('Документ успешно сохранен!');
+            } catch (error) {
                 console.error('Ошибка:', error);
                 alert('Ошибка при сохранении документа');
-            })
-            .finally(() => {
+            } finally {
                 // Восстанавливаем кнопку
                 saveButton.textContent = originalText;
                 saveButton.disabled = false;
-            });
-        }
-        
-        // Клик по документу для снятия выделения
-        document.addEventListener('click', (e) => {
-            if (e.target.closest('.seal-element')) return;
-            if (selectedElement) {
-                selectedElement.classList.remove('selected');
-                selectedElement = null;
             }
-        });
+        };
     </script>
 </body>
 </html> 

@@ -9,6 +9,7 @@ from reportlab.lib.pagesizes import letter, A4
 from reportlab.lib.units import inch
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.lib.utils import ImageReader
 import tempfile
 import base64
 from PIL import Image, ImageDraw, ImageFont
@@ -20,6 +21,42 @@ app.config['UPLOAD_FOLDER'] = 'uploads'
 
 # Создаем папку для загрузок если её нет
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+def _img_with_opacity(pil_img: Image.Image, opacity: float) -> Image.Image:
+    """Применяет прозрачность к изображению"""
+    if opacity >= 0.999:
+        return pil_img
+    pil_img = pil_img.convert("RGBA")
+    r, g, b, a = pil_img.split()
+    a = a.point(lambda v: int(v * opacity))
+    return Image.merge("RGBA", (r, g, b, a))
+
+def _make_overlay(page_w_pt, page_h_pt, seals_for_page, stamp_factory):
+    """Создаёт PDF-оверлей размера страницы и рисует все печати."""
+    packet = io.BytesIO()
+    c = canvas.Canvas(packet, pagesize=(page_w_pt, page_h_pt))
+
+    for seal in seals_for_page:
+        x_pt = float(seal['xPt'])
+        y_pt = float(seal['yPt'])
+        w_pt = float(seal['wPt'])
+        h_pt = float(seal['hPt'])
+        opacity = float(seal.get('opacity', 1.0))
+        seal_type = seal.get('type', 'falcon')
+
+        pil_img = stamp_factory(seal_type)  # ваша create_company_seal(...)
+        pil_img = _img_with_opacity(pil_img, opacity)
+
+        buf = io.BytesIO()
+        pil_img.save(buf, 'PNG', optimize=False, compress_level=0)
+        buf.seek(0)
+
+        c.drawImage(ImageReader(buf), x_pt, y_pt, width=w_pt, height=h_pt, mask='auto')
+
+    c.showPage()
+    c.save()
+    packet.seek(0)
+    return PdfReader(packet)
 
 # Настройки печати ФАЛКОН-ТРАНС
 COMPANY_NAME = "ФАЛКОН-ТРАНС"
@@ -338,97 +375,18 @@ def save_document():
             reader = PdfReader(temp_pdf_path)
             writer = PdfWriter()
             
-            # Накладываем печати на соответствующие страницы
-            if reader.pages and data['seals']:
-                print(f"DEBUG: Накладываем {len(data['seals'])} печатей на соответствующие страницы")
-                
-                # Группируем печати по страницам
-                seals_by_page = {}
-                for seal in data['seals']:
-                    page_num = seal.get('pageIndex', 0)  # 0-based индекс страницы
-                    if page_num not in seals_by_page:
-                        seals_by_page[page_num] = []
-                    seals_by_page[page_num].append(seal)
-                
-                # Обрабатываем каждую страницу с печатями
-                for page_num, seals in seals_by_page.items():
-                    if page_num < len(reader.pages):
-                        print(f"DEBUG: Обрабатываем страницу {page_num + 1} с {len(seals)} печатями")
-                        
-                        # Получаем страницу
-                        page = reader.pages[page_num]
-                        
-                        # Получаем реальные размеры страницы PDF
-                        page_w_pt = float(page.mediabox.width)
-                        page_h_pt = float(page.mediabox.height)
-                        
-                        # Создаем canvas размером страницы PDF
-                        packet = io.BytesIO()
-                        c = canvas.Canvas(packet, pagesize=(page_w_pt, page_h_pt))
-                        
-                        # Накладываем каждую печать на эту страницу
-                        for i, seal in enumerate(seals):
-                            seal_type = seal.get('type', 'falcon')
-                            x_px = float(seal['xPx'])
-                            y_px = float(seal['yPx'])
-                            w_px = float(seal['wPx'])
-                            h_px = float(seal['hPx'])
-                            page_w_px = float(seal['pageWidthPx'])
-                            page_h_px = float(seal['pageHeightPx'])
-                            opacity = float(seal.get('opacity', 1.0))
-                            
-                            # Перевод px (UI) → pt (PDF)
-                            x_pt = x_px / page_w_px * page_w_pt
-                            w_pt = w_px / page_w_px * page_w_pt
-                            
-                            y_top_pt = y_px / page_h_px * page_h_pt
-                            h_pt = h_px / page_h_px * page_h_pt
-                            y_pt = page_h_pt - y_top_pt - h_pt  # инверсия оси Y и учёт высоты штампа
-                            
-                            print(f"DEBUG: Печать {i+1} на странице {page_num + 1}: тип={seal_type}")
-                            print(f"DEBUG: Исходные координаты: xPx={x_px}, yPx={y_px}, wPx={w_px}, hPx={h_px}")
-                            print(f"DEBUG: Размеры страницы: pageWidthPx={page_w_px}, pageHeightPx={page_h_px}")
-                            print(f"DEBUG: PDF размеры: pageWidthPt={page_w_pt}, pageHeightPt={page_h_pt}")
-                            print(f"DEBUG: Финальные координаты: xPt={x_pt}, yPt={y_pt}, wPt={w_pt}, hPt={h_pt}")
-                            
-                            # Загружаем изображение печати
-                            seal_img = create_company_seal(seal_type)
-                            
-                            # Применяем прозрачность если нужно
-                            if opacity < 1.0:
-                                seal_img = seal_img.convert("RGBA")
-                                r, g, b, a = seal_img.split()
-                                # Умножаем альфу на opacity
-                                a = a.point(lambda v: int(v * opacity))
-                                seal_img = Image.merge("RGBA", (r, g, b, a))
-                            
-                            # Сохраняем во временный файл
-                            with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as temp_img:
-                                seal_img.save(temp_img.name, 'PNG', optimize=False, compress_level=0)
-                                img_path = temp_img.name
-                            
-                            try:
-                                # Накладываем изображение
-                                c.drawImage(img_path, x_pt, y_pt, width=w_pt, height=h_pt, mask='auto')
-                                print(f"DEBUG: Печать {i+1} наложена успешно на страницу {page_num + 1}")
-                                
-                            finally:
-                                # Удаляем временный файл изображения
-                                os.unlink(img_path)
-                        
-                        c.save()
-                        print(f"DEBUG: Canvas для страницы {page_num + 1} сохранен")
-                        
-                        # Перемещаем canvas поверх страницы
-                        packet.seek(0)
-                        overlay = PdfReader(packet)
-                        
-                        # Накладываем overlay на страницу
-                        page.merge_page(overlay.pages[0])
-                        print(f"DEBUG: Печати наложены на страницу {page_num + 1}")
+            # Группируем печати по странице (0-based)
+            seals_by_page = {}
+            for seal in data.get('seals', []):
+                i = int(seal.get('pageIndex', 0))
+                seals_by_page.setdefault(i, []).append(seal)
             
-            # Добавляем все страницы в writer
-            for page in reader.pages:
+            for i, page in enumerate(reader.pages):
+                if i in seals_by_page:
+                    page_w_pt = float(page.mediabox.width)
+                    page_h_pt = float(page.mediabox.height)
+                    overlay = _make_overlay(page_w_pt, page_h_pt, seals_by_page[i], create_company_seal)
+                    page.merge_page(overlay.pages[0])  # flatten по сути
                 writer.add_page(page)
             
             # Сохраняем результат
