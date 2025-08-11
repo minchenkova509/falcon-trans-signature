@@ -338,73 +338,91 @@ def save_document():
             reader = PdfReader(temp_pdf_path)
             writer = PdfWriter()
             
-            # Накладываем печати только на первую страницу
+            # Накладываем печати на соответствующие страницы
             if reader.pages and data['seals']:
-                print(f"DEBUG: Накладываем {len(data['seals'])} печатей на первую страницу")
+                print(f"DEBUG: Накладываем {len(data['seals'])} печатей на соответствующие страницы")
                 
-                # Получаем первую страницу
-                first_page = reader.pages[0]
+                # Группируем печати по страницам
+                seals_by_page = {}
+                for seal in data['seals']:
+                    page_num = seal.get('page', 1) - 1  # Нумерация страниц с 0
+                    if page_num not in seals_by_page:
+                        seals_by_page[page_num] = []
+                    seals_by_page[page_num].append(seal)
                 
-                # Создаем canvas для наложения печатей
-                packet = io.BytesIO()
-                c = canvas.Canvas(packet, pagesize=A4)
-                
-                # Накладываем каждую печать
-                for i, seal in enumerate(data['seals']):
-                    seal_type = seal.get('type', 'falcon')
-                    x = float(seal['x'])
-                    y = float(seal['y'])
-                    width = float(seal['width'])
-                    height = float(seal['height'])
-                    opacity = float(seal.get('opacity', 1.0))
-                    
-                    # Масштабируем координаты из браузера в PDF
-                    # A4 размер: 595 x 842 точек
-                    # Примерный размер iframe: 800 x 600 пикселей
-                    scale_x = 595 / 800
-                    scale_y = 842 / 600
-                    
-                    x_scaled = x * scale_x
-                    # Инвертируем Y координату (браузер сверху вниз, ReportLab снизу вверх)
-                    y_scaled = 842 - (y * scale_y) - (height * scale_y)
-                    width_scaled = width * scale_x
-                    height_scaled = height * scale_y
-                    
-                    # Проверяем границы
-                    if x_scaled < 0: x_scaled = 50
-                    if y_scaled < 0: y_scaled = 50
-                    if x_scaled + width_scaled > 595: x_scaled = 595 - width_scaled - 50
-                    if y_scaled + height_scaled > 842: y_scaled = 842 - height_scaled - 50
-                    
-                    print(f"DEBUG: Печать {i+1}: тип={seal_type}, x={x_scaled}, y={y_scaled}, w={width_scaled}, h={height_scaled}")
-                    
-                    # Загружаем изображение печати
-                    seal_img = create_company_seal(seal_type)
-                    
-                    # Сохраняем во временный файл
-                    with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as temp_img:
-                        seal_img.save(temp_img.name, 'PNG', optimize=False, compress_level=0)
-                        img_path = temp_img.name
-                    
-                    try:
-                        # Накладываем изображение
-                        c.drawImage(img_path, x_scaled, y_scaled, width=width_scaled, height=height_scaled, mask='auto')
-                        print(f"DEBUG: Печать {i+1} наложена успешно")
+                # Обрабатываем каждую страницу с печатями
+                for page_num, seals in seals_by_page.items():
+                    if page_num < len(reader.pages):
+                        print(f"DEBUG: Обрабатываем страницу {page_num + 1} с {len(seals)} печатями")
                         
-                    finally:
-                        # Удаляем временный файл изображения
-                        os.unlink(img_path)
-                
-                c.save()
-                print("DEBUG: Canvas сохранен")
-                
-                # Перемещаем canvas поверх первой страницы
-                packet.seek(0)
-                overlay = PdfReader(packet)
-                
-                # Накладываем overlay на первую страницу
-                first_page.merge_page(overlay.pages[0])
-                print("DEBUG: Печати наложены на первую страницу")
+                        # Получаем страницу
+                        page = reader.pages[page_num]
+                        
+                        # Создаем canvas для наложения печатей
+                        packet = io.BytesIO()
+                        c = canvas.Canvas(packet, pagesize=A4)
+                        
+                        # Накладываем каждую печать на эту страницу
+                        for i, seal in enumerate(seals):
+                            seal_type = seal.get('type', 'falcon')
+                            x = float(seal['x'])
+                            y = float(seal['y'])
+                            width = float(seal['width'])
+                            height = float(seal['height'])
+                            opacity = float(seal.get('opacity', 1.0))
+                            
+                            # Масштабируем координаты из браузера в PDF
+                            # A4 размер: 595 x 842 точек
+                            # Примерный размер iframe: 800 x 600 пикселей
+                            scale_x = 595 / 800
+                            scale_y = 842 / 600
+                            
+                            x_scaled = x * scale_x
+                            # Инвертируем Y координату (браузер сверху вниз, ReportLab снизу вверх)
+                            # Для второй страницы добавляем смещение
+                            if page_num == 1:  # Вторая страница
+                                y_scaled = 842 - ((y - 600) * scale_y) - (height * scale_y)
+                            else:  # Первая страница
+                                y_scaled = 842 - (y * scale_y) - (height * scale_y)
+                            
+                            width_scaled = width * scale_x
+                            height_scaled = height * scale_y
+                            
+                            # Проверяем границы
+                            if x_scaled < 0: x_scaled = 50
+                            if y_scaled < 0: y_scaled = 50
+                            if x_scaled + width_scaled > 595: x_scaled = 595 - width_scaled - 50
+                            if y_scaled + height_scaled > 842: y_scaled = 842 - height_scaled - 50
+                            
+                            print(f"DEBUG: Печать {i+1} на странице {page_num + 1}: тип={seal_type}, x={x_scaled}, y={y_scaled}, w={width_scaled}, h={height_scaled}")
+                            
+                            # Загружаем изображение печати
+                            seal_img = create_company_seal(seal_type)
+                            
+                            # Сохраняем во временный файл
+                            with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as temp_img:
+                                seal_img.save(temp_img.name, 'PNG', optimize=False, compress_level=0)
+                                img_path = temp_img.name
+                            
+                            try:
+                                # Накладываем изображение
+                                c.drawImage(img_path, x_scaled, y_scaled, width=width_scaled, height=height_scaled, mask='auto')
+                                print(f"DEBUG: Печать {i+1} наложена успешно на страницу {page_num + 1}")
+                                
+                            finally:
+                                # Удаляем временный файл изображения
+                                os.unlink(img_path)
+                        
+                        c.save()
+                        print(f"DEBUG: Canvas для страницы {page_num + 1} сохранен")
+                        
+                        # Перемещаем canvas поверх страницы
+                        packet.seek(0)
+                        overlay = PdfReader(packet)
+                        
+                        # Накладываем overlay на страницу
+                        page.merge_page(overlay.pages[0])
+                        print(f"DEBUG: Печати наложены на страницу {page_num + 1}")
             
             # Добавляем все страницы в writer
             for page in reader.pages:
