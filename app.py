@@ -345,7 +345,7 @@ def save_document():
                 # Группируем печати по страницам
                 seals_by_page = {}
                 for seal in data['seals']:
-                    page_num = seal.get('page', 1) - 1  # Нумерация страниц с 0
+                    page_num = seal.get('pageIndex', 0)  # 0-based индекс страницы
                     if page_num not in seals_by_page:
                         seals_by_page[page_num] = []
                     seals_by_page[page_num].append(seal)
@@ -358,56 +358,49 @@ def save_document():
                         # Получаем страницу
                         page = reader.pages[page_num]
                         
-                        # Создаем canvas для наложения печатей
+                        # Получаем реальные размеры страницы PDF
+                        page_w_pt = float(page.mediabox.width)
+                        page_h_pt = float(page.mediabox.height)
+                        
+                        # Создаем canvas размером страницы PDF
                         packet = io.BytesIO()
-                        c = canvas.Canvas(packet, pagesize=A4)
+                        c = canvas.Canvas(packet, pagesize=(page_w_pt, page_h_pt))
                         
                         # Накладываем каждую печать на эту страницу
                         for i, seal in enumerate(seals):
                             seal_type = seal.get('type', 'falcon')
-                            x = float(seal['x'])
-                            y = float(seal['y'])
-                            width = float(seal['width'])
-                            height = float(seal['height'])
+                            x_px = float(seal['xPx'])
+                            y_px = float(seal['yPx'])
+                            w_px = float(seal['wPx'])
+                            h_px = float(seal['hPx'])
+                            page_w_px = float(seal['pageWidthPx'])
+                            page_h_px = float(seal['pageHeightPx'])
                             opacity = float(seal.get('opacity', 1.0))
                             
-                            # Масштабируем координаты из браузера в PDF
-                            # A4 размер: 595 x 842 точек
+                            # Перевод px (UI) → pt (PDF)
+                            x_pt = x_px / page_w_px * page_w_pt
+                            w_pt = w_px / page_w_px * page_w_pt
                             
-                            # Получаем реальные размеры iframe из данных
-                            iframe_width = data.get('iframeWidth', 800)
-                            iframe_height = data.get('iframeHeight', 600)
-                            
-                            # Высота одной страницы в iframe
-                            page_height_iframe = iframe_height / 2
-                            
-                            # Масштабируем координаты пропорционально
-                            scale_x = 595 / iframe_width
-                            scale_y = 842 / page_height_iframe  # Масштабируем относительно высоты одной страницы
-                            
-                            x_scaled = x * scale_x
-                            
-                            # Инвертируем Y координату (браузер сверху вниз, ReportLab снизу вверх)
-                            # Инвертируем Y координату (браузер сверху вниз, ReportLab снизу вверх)
-                            # Y координата уже скорректирована на клиенте для второй страницы
-                            y_scaled = 842 - (y * scale_y) - (height * scale_y)
-                            
-                            width_scaled = width * scale_x
-                            height_scaled = height * scale_y
-                            
-                            # Проверяем границы
-                            if x_scaled < 0: x_scaled = 50
-                            if y_scaled < 0: y_scaled = 50
-                            if x_scaled + width_scaled > 595: x_scaled = 595 - width_scaled - 50
-                            if y_scaled + height_scaled > 842: y_scaled = 842 - height_scaled - 50
+                            y_top_pt = y_px / page_h_px * page_h_pt
+                            h_pt = h_px / page_h_px * page_h_pt
+                            y_pt = page_h_pt - y_top_pt - h_pt  # инверсия оси Y и учёт высоты штампа
                             
                             print(f"DEBUG: Печать {i+1} на странице {page_num + 1}: тип={seal_type}")
-                            print(f"DEBUG: Исходные координаты: x={x}, y={y}, w={width}, h={height}")
-                            print(f"DEBUG: Масштабирование: scale_x={scale_x}, scale_y={scale_y}")
-                            print(f"DEBUG: Финальные координаты: x={x_scaled}, y={y_scaled}, w={width_scaled}, h={height_scaled}")
+                            print(f"DEBUG: Исходные координаты: xPx={x_px}, yPx={y_px}, wPx={w_px}, hPx={h_px}")
+                            print(f"DEBUG: Размеры страницы: pageWidthPx={page_w_px}, pageHeightPx={page_h_px}")
+                            print(f"DEBUG: PDF размеры: pageWidthPt={page_w_pt}, pageHeightPt={page_h_pt}")
+                            print(f"DEBUG: Финальные координаты: xPt={x_pt}, yPt={y_pt}, wPt={w_pt}, hPt={h_pt}")
                             
                             # Загружаем изображение печати
                             seal_img = create_company_seal(seal_type)
+                            
+                            # Применяем прозрачность если нужно
+                            if opacity < 1.0:
+                                seal_img = seal_img.convert("RGBA")
+                                r, g, b, a = seal_img.split()
+                                # Умножаем альфу на opacity
+                                a = a.point(lambda v: int(v * opacity))
+                                seal_img = Image.merge("RGBA", (r, g, b, a))
                             
                             # Сохраняем во временный файл
                             with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as temp_img:
@@ -416,7 +409,7 @@ def save_document():
                             
                             try:
                                 # Накладываем изображение
-                                c.drawImage(img_path, x_scaled, y_scaled, width=width_scaled, height=height_scaled, mask='auto')
+                                c.drawImage(img_path, x_pt, y_pt, width=w_pt, height=h_pt, mask='auto')
                                 print(f"DEBUG: Печать {i+1} наложена успешно на страницу {page_num + 1}")
                                 
                             finally:
