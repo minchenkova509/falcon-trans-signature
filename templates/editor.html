@@ -184,19 +184,25 @@
                         
                         <div class="seal-preview" onclick="selectSeal('falcon')" data-seal="falcon">
                             <img src="{{ url_for('static', filename='images/falcon_seal.png') }}" 
-                                 alt="ФАЛКОН-ТРАНС" id="falconSeal">
+                                 alt="ФАЛКОН-ТРАНС" id="falconSeal"
+                                 onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                            <div style="display:none; text-align:center; color:#007bff; font-weight:bold;">ФАЛКОН-ТРАНС</div>
                         </div>
                         <small class="text-muted">ФАЛКОН-ТРАНС (ООО) - Печать</small>
                         
                         <div class="seal-preview" onclick="selectSeal('falcon_signature')" data-seal="falcon_signature">
                             <img src="{{ url_for('static', filename='images/falcon_signature.png') }}" 
-                                 alt="ФАЛКОН-ТРАНС Подпись" id="falconSignature">
+                                 alt="ФАЛКОН-ТРАНС Подпись" id="falconSignature"
+                                 onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                            <div style="display:none; text-align:center; color:#007bff; font-weight:bold;">Подпись ФАЛКОН</div>
                         </div>
                         <small class="text-muted">ФАЛКОН-ТРАНС (ООО) - Подпись</small>
                         
                         <div class="seal-preview" onclick="selectSeal('ip')" data-seal="ip">
                             <img src="{{ url_for('static', filename='images/ip_seal.png') }}" 
-                                 alt="ИП" id="ipSeal">
+                                 alt="ИП" id="ipSeal"
+                                 onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                            <div style="display:none; text-align:center; color:#007bff; font-weight:bold;">ИП</div>
                         </div>
                         <small class="text-muted">ИП Заикина - Печать</small>
                         
