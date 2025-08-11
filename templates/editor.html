@@ -280,6 +280,9 @@
 
         // Массив печатей в PT: { pageIndex, xPt, yPt, wPt, hPt, type, opacity }
         const seals = [];
+        
+        // Кэш картинок печатей
+        const STAMP_CACHE = new Map();
 
         // Инициализация
         document.addEventListener('DOMContentLoaded', function() {
@@ -453,20 +456,12 @@
                 canvas.style.height = `${viewport.height}px`;
                 pageEl.appendChild(canvas);
 
-                // Прозрачный слой для кликов/перетаскивания
-                const hit = document.createElement('div');
-                hit.className = 'hit-layer';
-                hit.style.position = 'absolute';
-                hit.style.left = '0';
-                hit.style.top = '0';
-                hit.style.right = '0';
-                hit.style.bottom = '0';
-                hit.style.cursor = 'crosshair';
-                pageEl.appendChild(hit);
-
+                // Создаем оверлей для печатей
+                const overlay = ensureOverlay(pageEl, viewport);
+                
                 // Клик → добавить печать в координатах PT
-                hit.addEventListener('click', (e) => {
-                    const r = hit.getBoundingClientRect();
+                overlay.addEventListener('click', async (e) => {
+                    const r = overlay.getBoundingClientRect();
                     const xCss = e.clientX - r.left;
                     const yCss = e.clientY - r.top;
 
@@ -487,21 +482,33 @@
                         opacity: sealOpacity / 100
                     });
 
-                    // Визуальный маркер
-                    const marker = document.createElement('div');
-                    marker.className = 'stamp-marker';
-                    marker.style.position = 'absolute';
-                    marker.style.left = `${xCss - cssW/2}px`;
-                    marker.style.top = `${yCss - cssH/2}px`;
-                    marker.style.width = `${cssW}px`;
-                    marker.style.height = `${cssH}px`;
-                    marker.style.border = '2px dashed #0aa';
-                    marker.style.borderRadius = '8px';
-                    marker.style.pointerEvents = 'none';
-                    marker.style.backgroundColor = 'rgba(0, 170, 170, 0.1)';
-                    hit.appendChild(marker);
+                    // Перерисовываем оверлей с новой печатью
+                    await redrawOverlay(pageEl, seals.filter(s => s.pageIndex === idx));
 
                     console.log(`DEBUG: Добавлена печать на страницу ${idx + 1}: xPt=${xPt}, yPt=${yPt}, wPt=${wPt}, hPt=${hPt}`);
+                });
+
+                // Правый клик → удалить печать
+                overlay.addEventListener('contextmenu', async (e) => {
+                    e.preventDefault();
+                    const r = overlay.getBoundingClientRect();
+                    const xCss = e.clientX - r.left;
+                    const yCss = e.clientY - r.top;
+
+                    // Ищем печать под курсором
+                    const list = seals.filter(s => s.pageIndex === idx);
+                    for (let i = list.length - 1; i >= 0; i--) {
+                        const s = list[i];
+                        const box = ptToCss(s, pageWidthPt, pageHeightPt, viewport);
+                        if (xCss >= box.xCss && xCss <= box.xCss + box.wCss && yCss >= box.yCssTop && yCss <= box.yCssTop + box.hCss) {
+                            // Удаляем печать из массива
+                            seals.splice(seals.indexOf(s), 1);
+                            // Перерисовываем оверлей
+                            await redrawOverlay(pageEl, seals.filter(s => s.pageIndex === idx));
+                            console.log(`DEBUG: Удалена печать с страницы ${idx + 1}`);
+                            break;
+                        }
+                    }
                 });
 
                 // Собственный рендер страницы (канвас)
@@ -511,10 +518,12 @@
 
                 // Сохраняем метаданные на элемент
                 pageEl._pdf = { viewport, pageWidthPt, pageHeightPt };
+                
+                // Включаем drag & drop
+                enableDrag(pageEl, idx);
             } else {
                 // При зуме обновляем размеры и перерендер
                 const canvas = pageEl.querySelector('.pdf-canvas');
-                const hit = pageEl.querySelector('.hit-layer');
                 pageEl.style.width = `${viewport.width}px`;
                 pageEl.style.height = `${viewport.height}px`;
 
@@ -523,14 +532,14 @@
                 canvas.style.width = `${viewport.width}px`;
                 canvas.style.height = `${viewport.height}px`;
 
-                hit.style.width = `${viewport.width}px`;
-                hit.style.height = `${viewport.height}px`;
-
                 const ctx = canvas.getContext('2d', { willReadFrequently: true });
                 ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
                 await page.render({ canvasContext: ctx, viewport }).promise;
 
                 pageEl._pdf = { viewport, pageWidthPt, pageHeightPt };
+                
+                // Перерисовываем оверлей с печатями
+                await redrawOverlay(pageEl, seals.filter(s => s.pageIndex === idx));
             }
         }
 
@@ -539,6 +548,142 @@
             if (pdfDoc) {
                 pageInfo.textContent = `Страниц: ${pdfDoc.numPages} | zoom: ${scale.toFixed(2)}×`;
             }
+        }
+
+        // Создание оверлея для печатей
+        function ensureOverlay(pageEl, viewport) {
+            let overlay = pageEl.querySelector('.overlay-canvas');
+            if (!overlay) {
+                overlay = document.createElement('canvas');
+                overlay.className = 'overlay-canvas';
+                overlay.style.position = 'absolute';
+                overlay.style.left = '0';
+                overlay.style.top = '0';
+                overlay.style.pointerEvents = 'auto'; // для кликов/drag
+                pageEl.appendChild(overlay);
+            }
+            // CSS-размер = viewport, физический размер = viewport * DPR
+            const dpr = window.devicePixelRatio || 1;
+            overlay.width = Math.floor(viewport.width * dpr);
+            overlay.height = Math.floor(viewport.height * dpr);
+            overlay.style.width = `${viewport.width}px`;
+            overlay.style.height = `${viewport.height}px`;
+            return overlay;
+        }
+
+        // Загрузка изображения печати
+        async function loadStampImage(type) {
+            if (STAMP_CACHE.has(type)) return STAMP_CACHE.get(type);
+            
+            const img = new Image();
+            img.decoding = 'async';
+            
+            // Выбираем путь к печати
+            let sealSrc;
+            switch(type) {
+                case 'falcon':
+                    sealSrc = "{{ url_for('static', filename='images/falcon_seal.png') }}";
+                    break;
+                case 'falcon_signature':
+                    sealSrc = "{{ url_for('static', filename='images/falcon_signature.png') }}";
+                    break;
+                case 'ip':
+                    sealSrc = "{{ url_for('static', filename='images/ip_seal.png') }}";
+                    break;
+                case 'ip_signature':
+                    sealSrc = "{{ url_for('static', filename='images/ip_signature.png') }}";
+                    break;
+                case 'ip_seal_signature':
+                    sealSrc = "{{ url_for('static', filename='images/ip_seal_signature.png') }}";
+                    break;
+                default:
+                    sealSrc = "{{ url_for('static', filename='images/falcon_seal.png') }}";
+            }
+            
+            img.src = sealSrc;
+            await img.decode();
+            STAMP_CACHE.set(type, img);
+            return img;
+        }
+
+        // Перевод координат PT → CSS
+        function ptToCss({xPt, yPt, wPt, hPt}, pageWidthPt, pageHeightPt, viewport) {
+            const xCss = (xPt / pageWidthPt) * viewport.width;
+            const yCssTop = ((pageHeightPt - yPt - hPt) / pageHeightPt) * viewport.height;
+            const wCss = (wPt / pageWidthPt) * viewport.width;
+            const hCss = (hPt / pageHeightPt) * viewport.height;
+            return { xCss, yCssTop, wCss, hCss };
+        }
+
+        // Перерисовка оверлея с печатями
+        async function redrawOverlay(pageEl, sealsForPage) {
+            const { viewport, pageWidthPt, pageHeightPt } = pageEl._pdf;
+            const overlay = ensureOverlay(pageEl, viewport);
+            const ctx = overlay.getContext('2d');
+            const dpr = window.devicePixelRatio || 1;
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+            for (const seal of sealsForPage) {
+                try {
+                    const img = await loadStampImage(seal.type || 'falcon');
+                    const { xCss, yCssTop, wCss, hCss } = ptToCss(seal, pageWidthPt, pageHeightPt, viewport);
+                    ctx.globalAlpha = seal.opacity ?? 1;
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.drawImage(img, xCss, yCssTop, wCss, hCss);
+                } catch (error) {
+                    console.error('Ошибка при отрисовке печати:', error);
+                }
+            }
+            ctx.globalAlpha = 1;
+        }
+
+        // Drag & Drop для печатей
+        function enableDrag(pageEl, idx) {
+            const overlay = pageEl.querySelector('.overlay-canvas');
+            let dragging = null; // ссылка на объект seal
+
+            overlay.addEventListener('pointerdown', async (e) => {
+                const pt = pageEl._pdf, vp = pt.viewport;
+                const r = overlay.getBoundingClientRect();
+                const x = e.clientX - r.left, y = e.clientY - r.top;
+
+                // Ищем печать под курсором (проходим в обратном порядке сверху вниз)
+                const list = seals.filter(s => s.pageIndex === idx);
+                for (let i = list.length - 1; i >= 0; i--) {
+                    const s = list[i];
+                    const box = ptToCss(s, pt.pageWidthPt, pt.pageHeightPt, vp);
+                    if (x >= box.xCss && x <= box.xCss + box.wCss && y >= box.yCssTop && y <= box.yCssTop + box.hCss) {
+                        dragging = { seal: s, offX: x - box.xCss, offY: y - box.yCssTop };
+                        break;
+                    }
+                }
+                if (dragging) overlay.setPointerCapture(e.pointerId);
+            });
+
+            overlay.addEventListener('pointermove', async (e) => {
+                if (!dragging) return;
+                const pt = pageEl._pdf, vp = pt.viewport;
+                const r = overlay.getBoundingClientRect();
+                let x = e.clientX - r.left - dragging.offX;
+                let y = e.clientY - r.top - dragging.offY;
+
+                // Clamp в пределах страницы
+                const { wCss, hCss } = ptToCss(dragging.seal, pt.pageWidthPt, pt.pageHeightPt, vp);
+                x = Math.max(0, Math.min(x, vp.width - wCss));
+                y = Math.max(0, Math.min(y, vp.height - hCss));
+
+                // CSS → pt и обновляем seal
+                dragging.seal.xPt = (x / vp.width) * pt.pageWidthPt;
+                const yTopPt = (y / vp.height) * pt.pageHeightPt;
+                dragging.seal.yPt = pt.pageHeightPt - yTopPt - dragging.seal.hPt;
+
+                await redrawOverlay(pageEl, seals.filter(s => s.pageIndex === idx));
+            });
+
+            overlay.addEventListener('pointerup', (e) => { 
+                dragging = null; 
+            });
         }
 
         // Добавление печати (для совместимости со старым кодом)
