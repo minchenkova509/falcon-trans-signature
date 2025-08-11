@@ -391,8 +391,10 @@ def save_document():
                 # Перемещаем canvas поверх первой страницы
                 packet.seek(0)
                 overlay = PdfReader(packet)
-                first_page = writer.pages[0]
-                first_page.merge_page(overlay.pages[0])
+                
+                # Важно: сначала копируем оригинальную страницу, потом накладываем
+                original_page = writer.pages[0]
+                original_page.merge_page(overlay.pages[0])
                 print("DEBUG: Печати наложены на первую страницу")
             
             # Сохраняем результат
