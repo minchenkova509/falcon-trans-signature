@@ -345,6 +345,7 @@ def save_document():
             # Накладываем печати только на первую страницу
             if writer.pages and data['seals']:
                 print(f"DEBUG: Накладываем {len(data['seals'])} печатей на первую страницу")
+                
                 # Создаем canvas для наложения печатей
                 packet = io.BytesIO()
                 c = canvas.Canvas(packet, pagesize=A4)
@@ -352,28 +353,12 @@ def save_document():
                 # Накладываем каждую печать
                 for i, seal in enumerate(data['seals']):
                     seal_type = seal.get('type', 'falcon')
-                    x = float(seal['x'])
-                    y = float(seal['y'])
                     
-                    # Простое масштабирование координат
-                    # A4 размер: 595 x 842 точек
-                    # Примерный размер iframe: 800 x 600 пикселей
-                    scale_x = 595 / 800
-                    scale_y = 842 / 600
-                    
-                    # Масштабируем координаты
-                    x_scaled = x * scale_x
-                    # Инвертируем Y координату (браузер сверху вниз, ReportLab снизу вверх)
-                    y_scaled = 842 - (y * scale_y) - (float(seal['height']) * scale_y)
-                    width = float(seal['width']) * scale_x
-                    height = float(seal['height']) * scale_y
-                    opacity = float(seal.get('opacity', 1.0))
-                    
-                    # Проверяем, что координаты в пределах страницы
-                    if x_scaled < 0: x_scaled = 50
-                    if y_scaled < 0: y_scaled = 50
-                    if x_scaled + width > 595: x_scaled = 595 - width - 50
-                    if y_scaled + height > 842: y_scaled = 842 - height - 50
+                    # Используем фиксированные координаты для тестирования
+                    x_scaled = 100  # Фиксированная позиция X
+                    y_scaled = 700  # Фиксированная позиция Y (снизу)
+                    width = 100     # Фиксированный размер
+                    height = 100    # Фиксированный размер
                     
                     print(f"DEBUG: Печать {i+1}: тип={seal_type}, x={x_scaled}, y={y_scaled}, w={width}, h={height}")
                     
