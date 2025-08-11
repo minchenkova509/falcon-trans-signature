@@ -307,6 +307,7 @@ def save_document():
     """Сохраняет документ с наложенными печатями"""
     try:
         data = request.get_json()
+        print(f"DEBUG: Получены данные: {len(data.get('seals', []))} печатей")
         
         if not data or 'pdfData' not in data or 'seals' not in data:
             return jsonify({'error': 'Неверные данные'}), 400
@@ -343,12 +344,13 @@ def save_document():
             
             # Накладываем печати только на первую страницу
             if writer.pages and data['seals']:
+                print(f"DEBUG: Накладываем {len(data['seals'])} печатей на первую страницу")
                 # Создаем canvas для наложения печатей
                 packet = io.BytesIO()
                 c = canvas.Canvas(packet, pagesize=A4)
                 
                 # Накладываем каждую печать
-                for seal in data['seals']:
+                for i, seal in enumerate(data['seals']):
                     seal_type = seal.get('type', 'falcon')
                     x = float(seal['x'])
                     # Инвертируем Y координату (браузер сверху вниз, ReportLab снизу вверх)
@@ -356,6 +358,8 @@ def save_document():
                     width = float(seal['width'])
                     height = float(seal['height'])
                     opacity = float(seal.get('opacity', 1.0))
+                    
+                    print(f"DEBUG: Печать {i+1}: тип={seal_type}, x={x}, y={y}, w={width}, h={height}")
                     
                     # Загружаем изображение печати
                     seal_img = create_company_seal(seal_type)
@@ -368,17 +372,20 @@ def save_document():
                     try:
                         # Накладываем изображение
                         c.drawImage(img_path, x, y, width=width, height=height, mask='auto')
+                        print(f"DEBUG: Печать {i+1} наложена успешно")
                     finally:
                         # Удаляем временный файл изображения
                         os.unlink(img_path)
                 
                 c.save()
+                print("DEBUG: Canvas сохранен")
                 
                 # Перемещаем canvas поверх первой страницы
                 packet.seek(0)
                 overlay = PdfReader(packet)
                 first_page = writer.pages[0]
                 first_page.merge_page(overlay.pages[0])
+                print("DEBUG: Печати наложены на первую страницу")
             
             # Сохраняем результат
             with open(result_path, 'wb') as output_file:
