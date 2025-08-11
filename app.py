@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, send_file, jsonify
 from werkzeug.utils import secure_filename
 import os
 import io
+import time
 from PyPDF2 import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter, A4
@@ -300,6 +301,104 @@ def ping():
         'timestamp': datetime.now().isoformat(),
         'service': 'falcon-trans-signature'
     })
+
+@app.route('/save-document', methods=['POST'])
+def save_document():
+    """Сохраняет документ с наложенными печатями"""
+    try:
+        data = request.get_json()
+        
+        if not data or 'pdfData' not in data or 'seals' not in data:
+            return jsonify({'error': 'Неверные данные'}), 400
+        
+        # Декодируем PDF из base64
+        pdf_data = base64.b64decode(data['pdfData'].split(',')[1])
+        
+        # Создаем временный файл для исходного PDF
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_pdf:
+            temp_pdf.write(pdf_data)
+            temp_pdf_path = temp_pdf.name
+        
+        # Создаем временный файл для результата
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_result:
+            result_path = temp_result.name
+        
+        try:
+            # Создаем новый PDF с печатями
+            reader = PdfReader(temp_pdf_path)
+            writer = PdfWriter()
+            
+            # Копируем все страницы
+            for page in reader.pages:
+                writer.add_page(page)
+            
+            # Создаем canvas для наложения печатей
+            packet = io.BytesIO()
+            c = canvas.Canvas(packet, pagesize=A4)
+            
+            # Накладываем каждую печать
+            for seal in data['seals']:
+                seal_type = seal.get('type', 'falcon')
+                x = float(seal['x'])
+                # Инвертируем Y координату (браузер сверху вниз, ReportLab снизу вверх)
+                y = A4[1] - float(seal['y']) - float(seal['height'])
+                width = float(seal['width'])
+                height = float(seal['height'])
+                opacity = float(seal.get('opacity', 1.0))
+                
+                # Загружаем изображение печати
+                seal_img = create_company_seal(seal_type)
+                
+                # Сохраняем во временный файл
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as temp_img:
+                    seal_img.save(temp_img.name, 'PNG', optimize=False, compress_level=0)
+                    img_path = temp_img.name
+                
+                try:
+                    # Накладываем изображение
+                    c.drawImage(img_path, x, y, width=width, height=height, mask='auto')
+                finally:
+                    # Удаляем временный файл изображения
+                    os.unlink(img_path)
+            
+            c.save()
+            
+            # Перемещаем canvas поверх PDF
+            packet.seek(0)
+            overlay = PdfReader(packet)
+            
+            # Накладываем на последнюю страницу
+            if writer.pages:
+                last_page = writer.pages[-1]
+                last_page.merge_page(overlay.pages[0])
+            
+            # Сохраняем результат
+            with open(result_path, 'wb') as output_file:
+                writer.write(output_file)
+            
+            # Читаем результат и отправляем
+            with open(result_path, 'rb') as f:
+                result_data = f.read()
+            
+            # Кодируем в base64 для отправки
+            result_base64 = base64.b64encode(result_data).decode('utf-8')
+            
+            return jsonify({
+                'success': True,
+                'pdfData': f'data:application/pdf;base64,{result_base64}',
+                'filename': f'document_with_seals_{int(time.time())}.pdf'
+            })
+            
+        finally:
+            # Удаляем временные файлы
+            if os.path.exists(temp_pdf_path):
+                os.unlink(temp_pdf_path)
+            if os.path.exists(result_path):
+                os.unlink(result_path)
+                
+    except Exception as e:
+        print(f"Ошибка при сохранении документа: {e}")
+        return jsonify({'error': f'Ошибка при сохранении: {str(e)}'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080))) 

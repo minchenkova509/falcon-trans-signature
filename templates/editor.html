@@ -371,6 +371,7 @@
             
             const sealElement = document.createElement('div');
             sealElement.className = 'seal-element';
+            sealElement.dataset.sealType = selectedSeal;
             sealElement.innerHTML = `
                 <img src="${sealSrc}" alt="Печать" style="width: ${sealSize}px; height: ${sealSize}px; opacity: ${sealOpacity/100};">
                 <div class="seal-controls">
@@ -494,8 +495,77 @@
                 return;
             }
             
-            // Здесь будет логика сохранения
-            alert('Функция сохранения будет добавлена позже');
+            // Собираем данные о печатях
+            const seals = [];
+            const sealElements = document.querySelectorAll('.seal-element');
+            
+            sealElements.forEach(element => {
+                const rect = element.getBoundingClientRect();
+                const containerRect = document.getElementById('documentView').getBoundingClientRect();
+                
+                // Вычисляем позицию относительно документа
+                const x = rect.left - containerRect.left;
+                const y = rect.top - containerRect.top;
+                
+                // Получаем размер и тип печати
+                const img = element.querySelector('img');
+                const width = img.offsetWidth;
+                const height = img.offsetHeight;
+                const opacity = parseFloat(img.style.opacity || 1);
+                const sealType = element.dataset.sealType || 'falcon';
+                
+                seals.push({
+                    x: x,
+                    y: y,
+                    width: width,
+                    height: height,
+                    opacity: opacity,
+                    type: sealType
+                });
+            });
+            
+            // Показываем индикатор загрузки
+            const saveButton = document.querySelector('button[onclick="saveDocument()"]');
+            const originalText = saveButton.textContent;
+            saveButton.textContent = 'Сохранение...';
+            saveButton.disabled = true;
+            
+            // Отправляем данные на сервер
+            fetch('/save-document', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    pdfData: currentDocument,
+                    seals: seals
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Создаем ссылку для скачивания
+                    const link = document.createElement('a');
+                    link.href = data.pdfData;
+                    link.download = data.filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    
+                    alert('Документ успешно сохранен!');
+                } else {
+                    alert('Ошибка при сохранении: ' + (data.error || 'Неизвестная ошибка'));
+                }
+            })
+            .catch(error => {
+                console.error('Ошибка:', error);
+                alert('Ошибка при сохранении документа');
+            })
+            .finally(() => {
+                // Восстанавливаем кнопку
+                saveButton.textContent = originalText;
+                saveButton.disabled = false;
+            });
         }
         
         // Клик по документу для снятия выделения
