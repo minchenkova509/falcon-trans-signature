@@ -333,7 +333,7 @@ def save_document():
             result_path = temp_result.name
         
         try:
-            # Создаем новый PDF с печатями
+            # Читаем исходный PDF
             reader = PdfReader(temp_pdf_path)
             writer = PdfWriter()
             
@@ -341,45 +341,44 @@ def save_document():
             for page in reader.pages:
                 writer.add_page(page)
             
-            # Создаем canvas для наложения печатей
-            packet = io.BytesIO()
-            c = canvas.Canvas(packet, pagesize=A4)
-            
-            # Накладываем каждую печать
-            for seal in data['seals']:
-                seal_type = seal.get('type', 'falcon')
-                x = float(seal['x'])
-                # Инвертируем Y координату (браузер сверху вниз, ReportLab снизу вверх)
-                y = A4[1] - float(seal['y']) - float(seal['height'])
-                width = float(seal['width'])
-                height = float(seal['height'])
-                opacity = float(seal.get('opacity', 1.0))
+            # Накладываем печати только на первую страницу
+            if writer.pages and data['seals']:
+                # Создаем canvas для наложения печатей
+                packet = io.BytesIO()
+                c = canvas.Canvas(packet, pagesize=A4)
                 
-                # Загружаем изображение печати
-                seal_img = create_company_seal(seal_type)
+                # Накладываем каждую печать
+                for seal in data['seals']:
+                    seal_type = seal.get('type', 'falcon')
+                    x = float(seal['x'])
+                    # Инвертируем Y координату (браузер сверху вниз, ReportLab снизу вверх)
+                    y = A4[1] - float(seal['y']) - float(seal['height'])
+                    width = float(seal['width'])
+                    height = float(seal['height'])
+                    opacity = float(seal.get('opacity', 1.0))
+                    
+                    # Загружаем изображение печати
+                    seal_img = create_company_seal(seal_type)
+                    
+                    # Сохраняем во временный файл
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as temp_img:
+                        seal_img.save(temp_img.name, 'PNG', optimize=False, compress_level=0)
+                        img_path = temp_img.name
+                    
+                    try:
+                        # Накладываем изображение
+                        c.drawImage(img_path, x, y, width=width, height=height, mask='auto')
+                    finally:
+                        # Удаляем временный файл изображения
+                        os.unlink(img_path)
                 
-                # Сохраняем во временный файл
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as temp_img:
-                    seal_img.save(temp_img.name, 'PNG', optimize=False, compress_level=0)
-                    img_path = temp_img.name
+                c.save()
                 
-                try:
-                    # Накладываем изображение
-                    c.drawImage(img_path, x, y, width=width, height=height, mask='auto')
-                finally:
-                    # Удаляем временный файл изображения
-                    os.unlink(img_path)
-            
-            c.save()
-            
-            # Перемещаем canvas поверх PDF
-            packet.seek(0)
-            overlay = PdfReader(packet)
-            
-            # Накладываем на последнюю страницу
-            if writer.pages:
-                last_page = writer.pages[-1]
-                last_page.merge_page(overlay.pages[0])
+                # Перемещаем canvas поверх первой страницы
+                packet.seek(0)
+                overlay = PdfReader(packet)
+                first_page = writer.pages[0]
+                first_page.merge_page(overlay.pages[0])
             
             # Сохраняем результат
             with open(result_path, 'wb') as output_file:
