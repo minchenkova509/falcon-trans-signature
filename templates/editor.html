@@ -313,9 +313,9 @@
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     displayDocument(e.target.result);
+                    currentDocument = e.target.result; // Сохраняем data URL
                 };
                 reader.readAsDataURL(file);
-                currentDocument = file;
             }
         }
         

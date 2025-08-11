@@ -312,7 +312,16 @@ def save_document():
             return jsonify({'error': 'Неверные данные'}), 400
         
         # Декодируем PDF из base64
-        pdf_data = base64.b64decode(data['pdfData'].split(',')[1])
+        pdf_data_str = data['pdfData']
+        if isinstance(pdf_data_str, str):
+            # Если это строка с data URL
+            if pdf_data_str.startswith('data:'):
+                pdf_data = base64.b64decode(pdf_data_str.split(',')[1])
+            else:
+                # Если это просто base64 строка
+                pdf_data = base64.b64decode(pdf_data_str)
+        else:
+            return jsonify({'error': 'Неверный формат данных PDF'}), 400
         
         # Создаем временный файл для исходного PDF
         with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_pdf:
