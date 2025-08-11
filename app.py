@@ -373,15 +373,17 @@ def save_document():
                             
                             # Масштабируем координаты из браузера в PDF
                             # A4 размер: 595 x 842 точек
-                            # Реальные размеры iframe могут отличаться, используем более точное масштабирование
                             
                             # Получаем реальные размеры iframe из данных
                             iframe_width = data.get('iframeWidth', 800)
                             iframe_height = data.get('iframeHeight', 600)
                             
+                            # Высота одной страницы в iframe
+                            page_height_iframe = iframe_height / 2
+                            
                             # Масштабируем координаты пропорционально
                             scale_x = 595 / iframe_width
-                            scale_y = 842 / iframe_height
+                            scale_y = 842 / page_height_iframe  # Масштабируем относительно высоты одной страницы
                             
                             x_scaled = x * scale_x
                             
@@ -399,7 +401,10 @@ def save_document():
                             if x_scaled + width_scaled > 595: x_scaled = 595 - width_scaled - 50
                             if y_scaled + height_scaled > 842: y_scaled = 842 - height_scaled - 50
                             
-                            print(f"DEBUG: Печать {i+1} на странице {page_num + 1}: тип={seal_type}, x={x_scaled}, y={y_scaled}, w={width_scaled}, h={height_scaled}")
+                            print(f"DEBUG: Печать {i+1} на странице {page_num + 1}: тип={seal_type}")
+                            print(f"DEBUG: Исходные координаты: x={x}, y={y}, w={width}, h={height}")
+                            print(f"DEBUG: Масштабирование: scale_x={scale_x}, scale_y={scale_y}")
+                            print(f"DEBUG: Финальные координаты: x={x_scaled}, y={y_scaled}, w={width_scaled}, h={height_scaled}")
                             
                             # Загружаем изображение печати
                             seal_img = create_company_seal(seal_type)

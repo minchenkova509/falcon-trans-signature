@@ -524,22 +524,27 @@
                 // Если Y координата больше половины высоты контейнера, то это вторая страница
                 const pageNumber = (y > pageHeight) ? 2 : 1;
                 
+                // Сохраняем оригинальные координаты для точного позиционирования
+                let finalX = x;
+                let finalY = y;
+                
                 // Для второй страницы корректируем Y координату относительно начала страницы
-                let adjustedY = y;
                 if (pageNumber === 2) {
-                    adjustedY = y - pageHeight;
+                    finalY = y - pageHeight;
                 }
                 
-                console.log(`DEBUG: Печать ${index + 1}: x=${x}, y=${y}, adjustedY=${adjustedY}, w=${width}, h=${height}, тип=${sealType}, страница=${pageNumber}`);
+                console.log(`DEBUG: Печать ${index + 1}: x=${x}, y=${y}, finalX=${finalX}, finalY=${finalY}, w=${width}, h=${height}, тип=${sealType}, страница=${pageNumber}`);
                 
                 seals.push({
-                    x: x,
-                    y: adjustedY, // Используем скорректированную Y координату
+                    x: finalX,
+                    y: finalY, // Используем финальные координаты
                     width: width,
                     height: height,
                     opacity: opacity,
                     type: sealType,
-                    page: pageNumber
+                    page: pageNumber,
+                    originalX: x, // Сохраняем оригинальные координаты для отладки
+                    originalY: y
                 });
             });
             
