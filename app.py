@@ -354,12 +354,17 @@ def save_document():
                     seal_type = seal.get('type', 'falcon')
                     x = float(seal['x'])
                     # Инвертируем Y координату (браузер сверху вниз, ReportLab снизу вверх)
-                    y = A4[1] - float(seal['y']) - float(seal['height'])
-                    width = float(seal['width'])
-                    height = float(seal['height'])
+                    # И масштабируем координаты под размер A4
+                    scale_x = A4[0] / 595  # A4 ширина в точках / примерная ширина iframe
+                    scale_y = A4[1] / 842  # A4 высота в точках / примерная высота iframe
+                    
+                    x_scaled = x * scale_x
+                    y_scaled = A4[1] - (y * scale_y) - (float(seal['height']) * scale_y)
+                    width = float(seal['width']) * scale_x
+                    height = float(seal['height']) * scale_y
                     opacity = float(seal.get('opacity', 1.0))
                     
-                    print(f"DEBUG: Печать {i+1}: тип={seal_type}, x={x}, y={y}, w={width}, h={height}")
+                    print(f"DEBUG: Печать {i+1}: тип={seal_type}, x={x_scaled}, y={y_scaled}, w={width}, h={height}")
                     
                     # Загружаем изображение печати
                     seal_img = create_company_seal(seal_type)
@@ -371,7 +376,7 @@ def save_document():
                     
                     try:
                         # Накладываем изображение
-                        c.drawImage(img_path, x, y, width=width, height=height, mask='auto')
+                        c.drawImage(img_path, x_scaled, y_scaled, width=width, height=height, mask='auto')
                         print(f"DEBUG: Печать {i+1} наложена успешно")
                     finally:
                         # Удаляем временный файл изображения

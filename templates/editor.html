@@ -323,7 +323,7 @@
         function displayDocument(dataUrl) {
             const documentView = document.getElementById('documentView');
             documentView.innerHTML = `
-                <div class="pdf-container">
+                <div class="pdf-container" style="position: relative; width: 100%; height: 600px;">
                     <iframe src="${dataUrl}" width="100%" height="600px" frameborder="0"></iframe>
                 </div>
             `;
@@ -505,7 +505,7 @@
                 const rect = element.getBoundingClientRect();
                 const containerRect = document.getElementById('documentView').getBoundingClientRect();
                 
-                // Вычисляем позицию относительно документа
+                // Вычисляем позицию относительно контейнера документа
                 const x = rect.left - containerRect.left;
                 const y = rect.top - containerRect.top;
                 
