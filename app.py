@@ -373,15 +373,24 @@ def save_document():
                             
                             # Масштабируем координаты из браузера в PDF
                             # A4 размер: 595 x 842 точек
-                            # Примерный размер iframe: 800 x 600 пикселей
-                            scale_x = 595 / 800
-                            scale_y = 842 / 600
+                            # Реальные размеры iframe могут отличаться, используем более точное масштабирование
+                            
+                            # Получаем реальные размеры iframe из данных
+                            iframe_width = data.get('iframeWidth', 800)
+                            iframe_height = data.get('iframeHeight', 600)
+                            
+                            # Масштабируем координаты пропорционально
+                            scale_x = 595 / iframe_width
+                            scale_y = 842 / iframe_height
                             
                             x_scaled = x * scale_x
+                            
                             # Инвертируем Y координату (браузер сверху вниз, ReportLab снизу вверх)
-                            # Для второй страницы добавляем смещение
                             if page_num == 1:  # Вторая страница
-                                y_scaled = 842 - ((y - 600) * scale_y) - (height * scale_y)
+                                # Для второй страницы корректируем Y координату
+                                page_height = iframe_height / 2  # Высота одной страницы в iframe
+                                adjusted_y = y - page_height  # Смещаем относительно второй страницы
+                                y_scaled = 842 - (adjusted_y * scale_y) - (height * scale_y)
                             else:  # Первая страница
                                 y_scaled = 842 - (y * scale_y) - (height * scale_y)
                             
