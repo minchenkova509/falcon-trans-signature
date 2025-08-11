@@ -353,16 +353,27 @@ def save_document():
                 for i, seal in enumerate(data['seals']):
                     seal_type = seal.get('type', 'falcon')
                     x = float(seal['x'])
-                    # Инвертируем Y координату (браузер сверху вниз, ReportLab снизу вверх)
-                    # И масштабируем координаты под размер A4
-                    scale_x = A4[0] / 595  # A4 ширина в точках / примерная ширина iframe
-                    scale_y = A4[1] / 842  # A4 высота в точках / примерная высота iframe
+                    y = float(seal['y'])
                     
+                    # Простое масштабирование координат
+                    # A4 размер: 595 x 842 точек
+                    # Примерный размер iframe: 800 x 600 пикселей
+                    scale_x = 595 / 800
+                    scale_y = 842 / 600
+                    
+                    # Масштабируем координаты
                     x_scaled = x * scale_x
-                    y_scaled = A4[1] - (y * scale_y) - (float(seal['height']) * scale_y)
+                    # Инвертируем Y координату (браузер сверху вниз, ReportLab снизу вверх)
+                    y_scaled = 842 - (y * scale_y) - (float(seal['height']) * scale_y)
                     width = float(seal['width']) * scale_x
                     height = float(seal['height']) * scale_y
                     opacity = float(seal.get('opacity', 1.0))
+                    
+                    # Проверяем, что координаты в пределах страницы
+                    if x_scaled < 0: x_scaled = 50
+                    if y_scaled < 0: y_scaled = 50
+                    if x_scaled + width > 595: x_scaled = 595 - width - 50
+                    if y_scaled + height > 842: y_scaled = 842 - height - 50
                     
                     print(f"DEBUG: Печать {i+1}: тип={seal_type}, x={x_scaled}, y={y_scaled}, w={width}, h={height}")
                     
@@ -396,12 +407,20 @@ def save_document():
             with open(result_path, 'wb') as output_file:
                 writer.write(output_file)
             
+            # Проверяем размер файла
+            file_size = os.path.getsize(result_path)
+            print(f"DEBUG: Размер созданного PDF: {file_size} байт")
+            
+            if file_size == 0:
+                return jsonify({'error': 'Создан пустой PDF файл'}), 500
+            
             # Читаем результат и отправляем
             with open(result_path, 'rb') as f:
                 result_data = f.read()
             
             # Кодируем в base64 для отправки
             result_base64 = base64.b64encode(result_data).decode('utf-8')
+            print(f"DEBUG: Размер base64 данных: {len(result_base64)} символов")
             
             return jsonify({
                 'success': True,
