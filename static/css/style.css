@@ -1,0 +1,305 @@
+/* Основные стили */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    overflow-x: hidden;
+}
+
+/* Левая панель */
+.bg-primary {
+    background: linear-gradient(135deg, #0d6efd 0%, #0b5ed7 100%) !important;
+}
+
+.logo-container {
+    animation: fadeInUp 1s ease-out;
+}
+
+.logo-container i {
+    color: rgba(255, 255, 255, 0.9);
+    animation: bounce 2s infinite;
+}
+
+/* Анимации */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes bounce {
+    0%, 20%, 50%, 80%, 100% {
+        transform: translateY(0);
+    }
+    40% {
+        transform: translateY(-10px);
+    }
+    60% {
+        transform: translateY(-5px);
+    }
+}
+
+/* Образец подписи */
+.signature-preview {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 15px;
+    padding: 20px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.preview-box {
+    position: relative;
+    background: white;
+    border-radius: 10px;
+    padding: 15px;
+    color: #333;
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.preview-content {
+    position: relative;
+    z-index: 2;
+}
+
+.signature-line {
+    border-bottom: 2px solid #333;
+    padding-bottom: 2px;
+}
+
+.seal-preview {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 1;
+}
+
+.seal-circle {
+    width: 60px;
+    height: 60px;
+    border: 3px solid #0d6efd;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(13, 110, 253, 0.1);
+    font-size: 8px;
+    font-weight: bold;
+    text-align: center;
+    color: #0d6efd;
+    line-height: 1.2;
+}
+
+/* Правая панель */
+.card {
+    border-radius: 20px;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Область загрузки */
+.upload-area {
+    border: 3px dashed #dee2e6;
+    border-radius: 15px;
+    padding: 40px;
+    text-align: center;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    background: #f8f9fa;
+}
+
+.upload-area:hover {
+    border-color: #0d6efd;
+    background: #f0f8ff;
+    transform: scale(1.02);
+}
+
+.upload-area.dragover {
+    border-color: #0d6efd;
+    background: #e3f2fd;
+    transform: scale(1.05);
+}
+
+.upload-content i {
+    color: #6c757d;
+    transition: color 0.3s ease;
+}
+
+.upload-area:hover .upload-content i {
+    color: #0d6efd;
+}
+
+/* Кнопки */
+.btn {
+    border-radius: 10px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #0d6efd 0%, #0b5ed7 100%);
+    border: none;
+    box-shadow: 0 4px 15px rgba(13, 110, 253, 0.3);
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(13, 110, 253, 0.4);
+}
+
+.btn-success {
+    background: linear-gradient(135deg, #198754 0%, #157347 100%);
+    border: none;
+    box-shadow: 0 4px 15px rgba(25, 135, 84, 0.3);
+}
+
+.btn-success:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(25, 135, 84, 0.4);
+}
+
+/* Прогресс бар */
+.progress {
+    height: 10px;
+    border-radius: 10px;
+    background: #e9ecef;
+    overflow: hidden;
+}
+
+.progress-bar {
+    background: linear-gradient(90deg, #0d6efd, #0b5ed7);
+    border-radius: 10px;
+}
+
+/* Алерты */
+.alert {
+    border-radius: 15px;
+    border: none;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+.alert-success {
+    background: linear-gradient(135deg, #d1e7dd 0%, #badbcc 100%);
+    color: #0f5132;
+}
+
+.alert-danger {
+    background: linear-gradient(135deg, #f8d7da 0%, #f5c2c7 100%);
+    color: #721c24;
+}
+
+/* Инструкции */
+.instructions {
+    background: #f8f9fa;
+    border-radius: 15px;
+    padding: 20px;
+    border-left: 4px solid #0d6efd;
+}
+
+.instructions ol {
+    margin-bottom: 0;
+    padding-left: 20px;
+}
+
+.instructions li {
+    margin-bottom: 8px;
+    line-height: 1.5;
+}
+
+/* Адаптивность */
+@media (max-width: 768px) {
+    .col-md-4 {
+        min-height: 300px;
+    }
+    
+    .logo-container h1 {
+        font-size: 2rem;
+    }
+    
+    .upload-area {
+        padding: 20px;
+    }
+    
+    .card-body {
+        padding: 2rem !important;
+    }
+}
+
+/* Анимации для состояний */
+.fade-in {
+    animation: fadeIn 0.5s ease-in;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Эффекты загрузки */
+.loading-spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: #fff;
+    animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Дополнительные эффекты */
+.text-shadow {
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.glow {
+    box-shadow: 0 0 20px rgba(13, 110, 253, 0.3);
+}
+
+/* Стили для drag and drop */
+.drag-over {
+    background: #e3f2fd !important;
+    border-color: #0d6efd !important;
+}
+
+/* Улучшенные стили для мобильных устройств */
+@media (max-width: 576px) {
+    .container-fluid {
+        padding: 0;
+    }
+    
+    .card {
+        margin: 10px;
+        border-radius: 15px;
+    }
+    
+    .btn {
+        width: 100%;
+        margin-bottom: 10px;
+    }
+    
+    .upload-area {
+        margin: 10px 0;
+    }
+} 
