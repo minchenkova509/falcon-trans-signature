@@ -374,6 +374,13 @@ def save_document():
                         # Накладываем изображение
                         c.drawImage(img_path, x_scaled, y_scaled, width=width, height=height, mask='auto')
                         print(f"DEBUG: Печать {i+1} наложена успешно")
+                        
+                        # Добавляем простой текст для проверки
+                        c.setFont("Helvetica", 12)
+                        c.setFillColorRGB(1, 0, 0)  # Красный цвет
+                        c.drawString(x_scaled, y_scaled + height + 10, f"ПЕЧАТЬ {i+1}")
+                        print(f"DEBUG: Текст печати {i+1} добавлен")
+                        
                     finally:
                         # Удаляем временный файл изображения
                         os.unlink(img_path)
