@@ -51,9 +51,14 @@ instance/
 # Uploads
 uploads/
 *.pdf
+
+# Images (but allow static/images)
 *.png
 *.jpg
 *.jpeg
+!static/images/*.png
+!static/images/*.jpg
+!static/images/*.jpeg
 
 # Logs
 *.log
