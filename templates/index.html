@@ -25,22 +25,7 @@
                         <p class="mb-1">ОГРН 1127746519306</p>
                         <p class="mb-3">МОСКВА</p>
                         
-                        <div class="signature-preview mt-4">
-                            <h5>Образец подписи:</h5>
-                            <div class="preview-box">
-                                <div class="preview-content">
-                                    <strong>ПЕРЕВОЗЧИК</strong><br>
-                                    <span class="signature-line">_________________</span> /Заикин С.С./<br>
-                                    <small>Генеральный директор</small><br>
-                                    <small>подпись</small> <small>ФИО</small>
-                                </div>
-                                <div class="seal-preview">
-                                    <div class="seal-circle">
-                                        <span>ФАЛКОН-ТРАНС</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+
                     </div>
                 </div>
             </div>
@@ -55,6 +40,34 @@
                                     <i class="fas fa-file-pdf text-danger me-2"></i>
                                     Добавить подпись к PDF
                                 </h2>
+                                
+                                <!-- Настройки печати и подписи -->
+                                <div class="settings-section mb-4">
+                                    <h6 class="text-muted mb-3">
+                                        <i class="fas fa-cog me-2"></i>
+                                        Настройки:
+                                    </h6>
+                                    
+                                    <!-- Выбор типа печати -->
+                                    <div class="row mb-3">
+                                        <div class="col-md-6">
+                                            <label class="form-label">Тип печати:</label>
+                                            <select class="form-select" id="sealType">
+                                                <option value="falcon">ФАЛКОН-ТРАНС (ООО)</option>
+                                                <option value="ip">ИП</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label">Добавить подпись:</label>
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="addSignature">
+                                                <label class="form-check-label" for="addSignature">
+                                                    Включить блок подписи
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                                 
                                 <!-- Загрузка файла -->
                                 <div class="upload-area mb-4" id="uploadArea">
@@ -116,6 +129,17 @@
                                         <li>Подождите обработки файла</li>
                                         <li>Скачайте документ с добавленной подписью и печатью</li>
                                     </ol>
+                                </div>
+                                
+                                <!-- Кнопка редактора -->
+                                <div class="text-center mt-4">
+                                    <a href="/editor" class="btn btn-outline-primary">
+                                        <i class="fas fa-edit me-2"></i>
+                                        Редактор печати
+                                    </a>
+                                    <small class="d-block text-muted mt-2">
+                                        Ручное размещение печати на документе
+                                    </small>
                                 </div>
                             </div>
                         </div>

@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Редактор печати - ФАЛКОН-ТРАНС</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .editor-container {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .toolbar {
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+            padding: 10px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .main-content {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+        
+        .sidebar {
+            width: 300px;
+            background: #f8f9fa;
+            border-right: 1px solid #dee2e6;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        
+        .document-view {
+            flex: 1;
+            position: relative;
+            overflow: auto;
+            background: #e9ecef;
+        }
+        
+        .pdf-container {
+            position: relative;
+            margin: 20px;
+            background: white;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            border-radius: 8px;
+        }
+        
+                        .seal-element {
+                    position: absolute;
+                    cursor: move;
+                    user-select: none;
+                    z-index: 1000;
+                    pointer-events: auto;
+                }
+        
+        .seal-element:hover {
+            transform: scale(1.05);
+        }
+        
+        .seal-element.selected {
+            outline: 2px solid #007bff;
+            outline-offset: 2px;
+        }
+        
+        .seal-controls {
+            position: absolute;
+            top: -30px;
+            right: 0;
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 5px;
+            display: none;
+        }
+        
+        .seal-element.selected .seal-controls {
+            display: flex;
+            gap: 5px;
+        }
+        
+        .seal-controls button {
+            padding: 2px 6px;
+            font-size: 12px;
+            border: none;
+            background: #f8f9fa;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        
+        .seal-controls button:hover {
+            background: #e9ecef;
+        }
+        
+        .seal-preview {
+            width: 100px;
+            height: 100px;
+            border: 2px dashed #dee2e6;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 10px 0;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .seal-preview:hover {
+            border-color: #007bff;
+            background: #f8f9fa;
+        }
+        
+        .seal-preview img {
+            max-width: 80px;
+            max-height: 80px;
+            object-fit: contain;
+        }
+        
+        .upload-area {
+            border: 2px dashed #dee2e6;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            margin: 10px 0;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .upload-area:hover {
+            border-color: #007bff;
+            background: #f8f9fa;
+        }
+        
+        .upload-area.dragover {
+            border-color: #007bff;
+            background: #e3f2fd;
+        }
+    </style>
+</head>
+<body>
+    <div class="editor-container">
+        <!-- Панель инструментов -->
+        <div class="toolbar">
+            <h5 class="mb-0">
+                <i class="fas fa-edit me-2"></i>
+                Редактор печати
+            </h5>
+            
+            <div class="ms-auto">
+                <button class="btn btn-outline-primary btn-sm me-2" onclick="addSeal()">
+                    <i class="fas fa-plus me-1"></i>
+                    Добавить печать
+                </button>
+                <button class="btn btn-success btn-sm me-2" onclick="saveDocument()">
+                    <i class="fas fa-save me-1"></i>
+                    Сохранить
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="window.location.href='/'">
+                    <i class="fas fa-arrow-left me-1"></i>
+                    Назад
+                </button>
+            </div>
+        </div>
+        
+        <div class="main-content">
+            <!-- Боковая панель -->
+            <div class="sidebar">
+                <h6>Загрузка документа</h6>
+                <div class="upload-area" id="documentUpload">
+                    <i class="fas fa-file-pdf fa-2x text-muted mb-2"></i>
+                    <p class="mb-0">Перетащите PDF файл сюда</p>
+                    <small class="text-muted">или нажмите для выбора</small>
+                    <input type="file" id="documentInput" accept=".pdf" class="d-none">
+                </div>
+                
+                <hr>
+                
+                                        <h6>Доступные печати и подписи</h6>
+                        
+                        <div class="seal-preview" onclick="selectSeal('falcon')" data-seal="falcon">
+                            <img src="{{ url_for('static', filename='images/falcon_seal.png') }}" 
+                                 alt="ФАЛКОН-ТРАНС" id="falconSeal">
+                        </div>
+                        <small class="text-muted">ФАЛКОН-ТРАНС (ООО) - Печать</small>
+                        
+                        <div class="seal-preview" onclick="selectSeal('falcon_signature')" data-seal="falcon_signature">
+                            <img src="{{ url_for('static', filename='images/falcon_signature.png') }}" 
+                                 alt="ФАЛКОН-ТРАНС Подпись" id="falconSignature">
+                        </div>
+                        <small class="text-muted">ФАЛКОН-ТРАНС (ООО) - Подпись</small>
+                        
+                        <div class="seal-preview" onclick="selectSeal('ip')" data-seal="ip">
+                            <img src="{{ url_for('static', filename='images/ip_seal.png') }}" 
+                                 alt="ИП" id="ipSeal">
+                        </div>
+                        <small class="text-muted">ИП Заикина - Печать</small>
+                        
+                        <div class="seal-preview" onclick="selectSeal('ip_signature')" data-seal="ip_signature">
+                            <img src="{{ url_for('static', filename='images/ip_signature.png') }}" 
+                                 alt="ИП Подпись" id="ipSignature">
+                        </div>
+                        <small class="text-muted">ИП Заикина - Подпись</small>
+                        
+                        <div class="seal-preview" onclick="selectSeal('ip_seal_signature')" data-seal="ip_seal_signature">
+                            <img src="{{ url_for('static', filename='images/ip_seal_signature.png') }}" 
+                                 alt="ИП Печать+Подпись" id="ipSealSignature">
+                        </div>
+                        <small class="text-muted">ИП Заикина - Печать+Подпись</small>
+                
+                <hr>
+                
+                <h6>Настройки</h6>
+                <div class="mb-3">
+                    <label class="form-label">Размер печати:</label>
+                    <input type="range" class="form-range" id="sealSize" min="50" max="300" value="150">
+                    <small class="text-muted" id="sizeValue">150px</small>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Прозрачность:</label>
+                    <input type="range" class="form-range" id="sealOpacity" min="20" max="100" value="100">
+                    <small class="text-muted" id="opacityValue">100%</small>
+                </div>
+            </div>
+            
+            <!-- Область просмотра документа -->
+            <div class="document-view" id="documentView">
+                <div class="text-center text-muted" style="margin-top: 100px;">
+                    <i class="fas fa-file-pdf fa-4x mb-3"></i>
+                    <h5>Загрузите PDF документ для редактирования</h5>
+                    <p>Перетащите файл в область слева или нажмите на неё</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let selectedSeal = 'falcon';
+        let sealSize = 150;
+        let sealOpacity = 100;
+        let currentDocument = null;
+        let selectedElement = null;
+        
+        // Инициализация
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeUpload();
+            initializeControls();
+        });
+        
+        // Инициализация загрузки
+        function initializeUpload() {
+            const uploadArea = document.getElementById('documentUpload');
+            const documentInput = document.getElementById('documentInput');
+            
+            uploadArea.addEventListener('click', () => documentInput.click());
+            documentInput.addEventListener('change', handleDocumentUpload);
+            
+            // Drag and drop
+            uploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadArea.classList.add('dragover');
+            });
+            
+            uploadArea.addEventListener('dragleave', () => {
+                uploadArea.classList.remove('dragover');
+            });
+            
+            uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadArea.classList.remove('dragover');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    handleDocumentUpload({ target: { files: files } });
+                }
+            });
+        }
+        
+        // Инициализация контролов
+        function initializeControls() {
+            const sizeSlider = document.getElementById('sealSize');
+            const opacitySlider = document.getElementById('sealOpacity');
+            
+            sizeSlider.addEventListener('input', (e) => {
+                sealSize = e.target.value;
+                document.getElementById('sizeValue').textContent = sealSize + 'px';
+                updateSelectedElement();
+            });
+            
+            opacitySlider.addEventListener('input', (e) => {
+                sealOpacity = e.target.value;
+                document.getElementById('opacityValue').textContent = sealOpacity + '%';
+                updateSelectedElement();
+            });
+        }
+        
+        // Обработка загрузки документа
+        function handleDocumentUpload(event) {
+            const file = event.target.files[0];
+            if (file && file.type === 'application/pdf') {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    displayDocument(e.target.result);
+                };
+                reader.readAsDataURL(file);
+                currentDocument = file;
+            }
+        }
+        
+        // Отображение документа
+        function displayDocument(dataUrl) {
+            const documentView = document.getElementById('documentView');
+            documentView.innerHTML = `
+                <div class="pdf-container">
+                    <iframe src="${dataUrl}" width="100%" height="600px" frameborder="0"></iframe>
+                </div>
+            `;
+        }
+        
+        // Выбор печати
+        function selectSeal(type) {
+            selectedSeal = type;
+            
+            // Обновляем визуальное выделение
+            document.querySelectorAll('.seal-preview').forEach(el => {
+                el.style.borderColor = '#dee2e6';
+            });
+            event.target.closest('.seal-preview').style.borderColor = '#007bff';
+        }
+        
+        // Добавление печати
+        function addSeal() {
+            if (!currentDocument) {
+                alert('Сначала загрузите PDF документ');
+                return;
+            }
+            
+            const documentView = document.getElementById('documentView');
+            let sealSrc;
+            switch(selectedSeal) {
+                case 'falcon':
+                    sealSrc = "{{ url_for('static', filename='images/falcon_seal.png') }}";
+                    break;
+                case 'falcon_signature':
+                    sealSrc = "{{ url_for('static', filename='images/falcon_signature.png') }}";
+                    break;
+                case 'ip':
+                    sealSrc = "{{ url_for('static', filename='images/ip_seal.png') }}";
+                    break;
+                case 'ip_signature':
+                    sealSrc = "{{ url_for('static', filename='images/ip_signature.png') }}";
+                    break;
+                case 'ip_seal_signature':
+                    sealSrc = "{{ url_for('static', filename='images/ip_seal_signature.png') }}";
+                    break;
+                default:
+                    sealSrc = "{{ url_for('static', filename='images/falcon_seal.png') }}";
+            }
+            
+            const sealElement = document.createElement('div');
+            sealElement.className = 'seal-element';
+            sealElement.innerHTML = `
+                <img src="${sealSrc}" alt="Печать" style="width: ${sealSize}px; height: ${sealSize}px; opacity: ${sealOpacity/100};">
+                <div class="seal-controls">
+                    <button onclick="deleteSeal(this)" title="Удалить">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                    <button onclick="bringToFront(this)" title="На передний план">
+                        <i class="fas fa-layer-group"></i>
+                    </button>
+                </div>
+            `;
+            
+            // Позиционирование по центру контейнера
+            const container = document.getElementById('documentView');
+            const containerRect = container.getBoundingClientRect();
+            const centerX = (containerRect.width - sealSize) / 2;
+            const centerY = (containerRect.height - sealSize) / 2;
+            
+            sealElement.style.left = centerX + 'px';
+            sealElement.style.top = centerY + 'px';
+            sealElement.style.transform = 'none';
+            
+            // Добавляем функциональность перетаскивания
+            makeDraggable(sealElement);
+            
+            documentView.appendChild(sealElement);
+            selectElement(sealElement);
+        }
+        
+        // Сделать элемент перетаскиваемым
+        function makeDraggable(element) {
+            let isDragging = false;
+            let offsetX = 0;
+            let offsetY = 0;
+            
+            element.addEventListener('mousedown', startDragging);
+            element.addEventListener('click', (e) => {
+                e.stopPropagation();
+                selectElement(element);
+            });
+            
+            function startDragging(e) {
+                e.preventDefault();
+                
+                const rect = element.getBoundingClientRect();
+                const containerRect = document.getElementById('documentView').getBoundingClientRect();
+                
+                // Вычисляем смещение курсора относительно элемента
+                offsetX = e.clientX - rect.left;
+                offsetY = e.clientY - rect.top;
+                
+                isDragging = true;
+            }
+            
+            document.addEventListener('mousemove', drag);
+            document.addEventListener('mouseup', stopDragging);
+            
+            function drag(e) {
+                if (isDragging) {
+                    e.preventDefault();
+                    
+                    const containerRect = document.getElementById('documentView').getBoundingClientRect();
+                    
+                    // Вычисляем новую позицию с учетом смещения курсора
+                    let newX = e.clientX - containerRect.left - offsetX;
+                    let newY = e.clientY - containerRect.top - offsetY;
+                    
+                    // Ограничиваем позицию границами контейнера
+                    const maxX = containerRect.width - element.offsetWidth;
+                    const maxY = containerRect.height - element.offsetHeight;
+                    
+                    newX = Math.max(0, Math.min(newX, maxX));
+                    newY = Math.max(0, Math.min(newY, maxY));
+                    
+                    element.style.left = newX + 'px';
+                    element.style.top = newY + 'px';
+                }
+            }
+            
+            function stopDragging() {
+                isDragging = false;
+            }
+        }
+        
+        // Выбор элемента
+        function selectElement(element) {
+            if (selectedElement) {
+                selectedElement.classList.remove('selected');
+            }
+            selectedElement = element;
+            element.classList.add('selected');
+        }
+        
+        // Обновление выбранного элемента
+        function updateSelectedElement() {
+            if (selectedElement) {
+                const img = selectedElement.querySelector('img');
+                img.style.width = sealSize + 'px';
+                img.style.height = sealSize + 'px';
+                img.style.opacity = sealOpacity / 100;
+            }
+        }
+        
+        // Удаление печати
+        function deleteSeal(button) {
+            const element = button.closest('.seal-element');
+            element.remove();
+            selectedElement = null;
+        }
+        
+        // Перемещение на передний план
+        function bringToFront(button) {
+            const element = button.closest('.seal-element');
+            element.style.zIndex = parseInt(element.style.zIndex || 1000) + 1;
+        }
+        
+        // Сохранение документа
+        function saveDocument() {
+            if (!currentDocument) {
+                alert('Нет документа для сохранения');
+                return;
+            }
+            
+            // Здесь будет логика сохранения
+            alert('Функция сохранения будет добавлена позже');
+        }
+        
+        // Клик по документу для снятия выделения
+        document.addEventListener('click', (e) => {
+            if (e.target.closest('.seal-element')) return;
+            if (selectedElement) {
+                selectedElement.classList.remove('selected');
+                selectedElement = null;
+            }
+        });
+    </script>
+</body>
+</html> 

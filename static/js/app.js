@@ -4,6 +4,18 @@ let downloadFilename = null;
 
 // Инициализация при загрузке страницы
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM загружен, инициализируем приложение');
+    
+    // Простая проверка элементов
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileInput');
+    
+    if (!uploadArea || !fileInput) {
+        console.error('Не найдены основные элементы интерфейса');
+        return;
+    }
+    
+    console.log('Основные элементы найдены, инициализируем функциональность');
     initializeDragAndDrop();
     initializeFileInput();
     initializeDownloadButton();
@@ -31,8 +43,12 @@ function initializeDragAndDrop() {
     // Обработка сброса файла
     uploadArea.addEventListener('drop', handleDrop, false);
     
-    // Клик по области загрузки
-    uploadArea.addEventListener('click', () => {
+    // Клик по области загрузки (но не по кнопке)
+    uploadArea.addEventListener('click', (e) => {
+        // Не срабатываем, если клик был по кнопке
+        if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+            return;
+        }
         document.getElementById('fileInput').click();
     });
 }
@@ -67,8 +83,11 @@ function unhighlight(e) {
 
 // Обработка сброса файла
 function handleDrop(e) {
+    console.log('Drop event triggered');
     const dt = e.dataTransfer;
     const files = dt.files;
+    
+    console.log('Количество файлов в drop:', files.length);
     
     if (files.length > 0) {
         handleFile(files[0]);
@@ -77,7 +96,10 @@ function handleDrop(e) {
 
 // Обработка выбора файла
 function handleFileSelect(e) {
+    console.log('File select event triggered');
     const files = e.target.files;
+    console.log('Количество файлов в select:', files.length);
+    
     if (files.length > 0) {
         handleFile(files[0]);
     }
@@ -85,30 +107,50 @@ function handleFileSelect(e) {
 
 // Обработка файла
 function handleFile(file) {
-    // Проверяем тип файла
-    if (!file.type.includes('pdf')) {
+    console.log('Обработка файла:', file.name, file.type, file.size);
+    
+    // Проверяем тип файла (более гибкая проверка)
+    const isValidPdf = file.type === 'application/pdf' || 
+                      file.type === 'pdf' || 
+                      file.name.toLowerCase().endsWith('.pdf');
+    
+    if (!isValidPdf) {
+        console.log('Неверный тип файла:', file.type);
         showError('Пожалуйста, выберите PDF файл');
         return;
     }
     
     // Проверяем размер файла (16MB)
     if (file.size > 16 * 1024 * 1024) {
+        console.log('Файл слишком большой:', file.size);
         showError('Размер файла не должен превышать 16 МБ');
         return;
     }
     
+    console.log('Файл прошел валидацию, начинаем загрузку');
     currentFile = file;
     uploadFile(file);
 }
 
 // Загрузка файла на сервер
 async function uploadFile(file) {
+    console.log('Начинаем загрузку файла на сервер');
     showProgress();
     
     const formData = new FormData();
     formData.append('file', file);
     
+    // Добавляем параметры из формы
+    const sealType = document.getElementById('sealType').value;
+    const addSignature = document.getElementById('addSignature').checked;
+    
+    formData.append('seal_type', sealType);
+    formData.append('add_signature', addSignature);
+    
+    console.log('Параметры:', { sealType, addSignature });
+    
     try {
+        console.log('Отправляем запрос на /upload');
         // Симуляция прогресса
         simulateProgress();
         
@@ -117,7 +159,10 @@ async function uploadFile(file) {
             body: formData
         });
         
+        console.log('Получен ответ от сервера:', response.status);
+        
         const result = await response.json();
+        console.log('Результат обработки:', result);
         
         if (result.success) {
             downloadFilename = result.filename;
@@ -180,13 +225,20 @@ function showSuccess(message) {
 
 // Показать ошибку
 function showError(message) {
+    console.log('Показываем ошибку:', message);
     hideAllContainers();
     const errorContainer = document.getElementById('errorContainer');
     const errorText = document.getElementById('errorText');
     
-    errorContainer.classList.remove('d-none');
-    errorContainer.classList.add('fade-in');
-    errorText.textContent = message;
+    if (errorContainer && errorText) {
+        errorContainer.classList.remove('d-none');
+        errorContainer.classList.add('fade-in');
+        errorText.textContent = message;
+    } else {
+        console.error('Не найдены элементы для отображения ошибки');
+        // Используем простой alert как fallback
+        alert('Ошибка: ' + message);
+    }
 }
 
 // Скрыть все контейнеры
@@ -199,8 +251,10 @@ function hideAllContainers() {
     
     containers.forEach(id => {
         const container = document.getElementById(id);
-        container.classList.add('d-none');
-        container.classList.remove('fade-in');
+        if (container) {
+            container.classList.add('d-none');
+            container.classList.remove('fade-in');
+        }
     });
 }
 

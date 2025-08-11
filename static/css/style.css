@@ -94,6 +94,20 @@ body {
     line-height: 1.2;
 }
 
+/* Стили для изображения печати */
+.seal-image {
+    border-radius: 10px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    background: white;
+    padding: 10px;
+}
+
+.seal-image:hover {
+    transform: scale(1.05);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+
 /* Правая панель */
 .card {
     border-radius: 20px;

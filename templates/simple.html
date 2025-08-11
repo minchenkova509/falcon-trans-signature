@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ФАЛКОН-ТРАНС Подпись - Простая версия</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .upload-area { 
+            border: 3px dashed #007bff; 
+            padding: 40px; 
+            text-align: center; 
+            margin: 20px 0;
+            cursor: pointer;
+            background: #f8f9fa;
+        }
+        .upload-area:hover { background: #e9ecef; }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="row">
+            <div class="col-md-8 offset-md-2">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <h1 class="card-title text-primary">ФАЛКОН-ТРАНС Подпись</h1>
+                        <p class="lead">Добавление подписи к PDF документам</p>
+                        
+                        <div class="upload-area" id="uploadArea">
+                            <h4>Перетащите PDF файл сюда</h4>
+                            <p>или нажмите для выбора файла</p>
+                            <input type="file" id="fileInput" accept=".pdf" style="display: none;">
+                            <button class="btn btn-primary btn-lg" onclick="document.getElementById('fileInput').click()">
+                                Выбрать файл
+                            </button>
+                        </div>
+                        
+                        <div id="status" class="mt-3"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        console.log('Простой JavaScript загружен');
+
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM загружен');
+            
+            const uploadArea = document.getElementById('uploadArea');
+            const fileInput = document.getElementById('fileInput');
+            const status = document.getElementById('status');
+            
+            console.log('uploadArea:', uploadArea);
+            console.log('fileInput:', fileInput);
+            
+            if (!uploadArea || !fileInput) {
+                console.error('Элементы не найдены!');
+                status.innerHTML = '<div class="alert alert-danger">Ошибка: элементы не найдены</div>';
+                return;
+            }
+            
+            // Обработчик для file input
+            fileInput.addEventListener('change', function(e) {
+                console.log('File input change:', e.target.files);
+                if (e.target.files.length > 0) {
+                    const file = e.target.files[0];
+                    console.log('Выбран файл:', file.name, file.type, file.size);
+                    uploadFile(file);
+                }
+            });
+            
+            // Drag and drop
+            uploadArea.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                console.log('Drag over');
+            });
+            
+            uploadArea.addEventListener('drop', function(e) {
+                e.preventDefault();
+                console.log('Drop event');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    console.log('Файл перетащен:', files[0].name);
+                    uploadFile(files[0]);
+                }
+            });
+            
+            // Клик по области загрузки (но не по кнопке)
+            uploadArea.addEventListener('click', function(e) {
+                // Не срабатываем, если клик был по кнопке
+                if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+                    return;
+                }
+                console.log('Клик по области загрузки');
+                fileInput.click();
+            });
+            
+            function uploadFile(file) {
+                console.log('Начинаем загрузку файла:', file.name);
+                status.innerHTML = '<div class="alert alert-info">Загружаем файл...</div>';
+                
+                // Проверка типа файла
+                if (!file.type.includes('pdf') && !file.name.toLowerCase().endsWith('.pdf')) {
+                    status.innerHTML = '<div class="alert alert-danger">Пожалуйста, выберите PDF файл</div>';
+                    return;
+                }
+                
+                // Проверка размера
+                if (file.size > 16 * 1024 * 1024) {
+                    status.innerHTML = '<div class="alert alert-danger">Файл слишком большой (максимум 16 МБ)</div>';
+                    return;
+                }
+                
+                // Создаем FormData
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                // Отправляем запрос
+                fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => {
+                    console.log('Ответ сервера:', response.status);
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('Данные ответа:', data);
+                    if (data.success) {
+                        status.innerHTML = '<div class="alert alert-success">Успех! Файл обработан: ' + data.filename + '</div>';
+                        // Создаем ссылку для скачивания
+                        const link = document.createElement('a');
+                        link.href = '/download/' + data.filename;
+                        link.download = data.filename;
+                        link.className = 'btn btn-success btn-lg mt-3';
+                        link.textContent = 'Скачать файл';
+                        status.appendChild(link);
+                    } else {
+                        status.innerHTML = '<div class="alert alert-danger">Ошибка: ' + (data.error || 'Неизвестная ошибка') + '</div>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Ошибка загрузки:', error);
+                    status.innerHTML = '<div class="alert alert-danger">Ошибка соединения с сервером</div>';
+                });
+            }
+            
+            console.log('Инициализация завершена');
+        });
+    </script>
+</body>
+</html> 

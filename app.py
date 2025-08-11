@@ -27,97 +27,137 @@ OGRN = "ОГРН 1127746519306"
 CITY = "МОСКВА"
 DIRECTOR_NAME = "Заикин С.С."
 
-def create_company_seal():
-    """Создает изображение печати компании"""
-    # Создаем изображение печати
-    size = 200
-    img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    
-    # Рисуем круг печати
-    center = size // 2
-    radius = 80
-    
-    # Внешний круг (синий)
-    draw.ellipse([center - radius, center - radius, center + radius, center + radius], 
-                 outline=(0, 0, 255, 255), width=3)
-    
-    # Внутренний круг
-    inner_radius = radius - 15
-    draw.ellipse([center - inner_radius, center - inner_radius, center + inner_radius, center + inner_radius], 
-                 outline=(0, 0, 255, 255), width=1)
-    
-    # Добавляем текст по кругу (название компании)
+def create_company_seal(seal_type="falcon"):
+    """Загружает готовое изображение печати"""
     try:
-        # Пытаемся использовать системный шрифт
-        font_small = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 10)
-    except:
-        font_small = ImageFont.load_default()
+        # Выбираем путь к печати в зависимости от типа
+        if seal_type == "falcon":
+            seal_path = "static/images/falcon_seal.png"
+        elif seal_type == "ip":
+            seal_path = "static/images/ip_seal.png"
+        else:
+            seal_path = "static/images/falcon_seal.png"  # По умолчанию
+        
+        if os.path.exists(seal_path):
+            img = Image.open(seal_path)
+            # Конвертируем в RGBA если нужно
+            if img.mode != 'RGBA':
+                img = img.convert('RGBA')
+            return img
+        else:
+            # Если файл не найден, создаем простую заглушку
+            print(f"Файл печати не найден: {seal_path}")
+            print(f"Создаем простую заглушку. Загрузите файл {os.path.basename(seal_path)} в папку static/images/")
+            
+            # Создаем простую заглушку
+            size = 200
+            img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
+            
+            # Простой круг
+            center = size // 2
+            radius = 80
+            draw.ellipse([center - radius, center - radius, center + radius, center + radius], 
+                        outline=(0, 0, 255, 255), width=3)
+            
+            # Текст в центре
+            try:
+                font = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 16)
+            except:
+                font = ImageFont.load_default()
+            
+            if seal_type == "ip":
+                draw.text((center - 30, center - 10), "ИП", fill=(0, 0, 255, 255), font=font)
+            else:
+                draw.text((center - 40, center - 10), "ФАЛКОН-ТРАНС", fill=(0, 0, 255, 255), font=font)
+            
+            return img
+            
+    except Exception as e:
+        print(f"Ошибка при загрузке печати: {e}")
+        # Возвращаем простую заглушку в случае ошибки
+        size = 200
+        img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        center = size // 2
+        radius = 80
+        draw.ellipse([center - radius, center - radius, center + radius, center + radius], 
+                    outline=(0, 0, 255, 255), width=3)
+        return img
+
+def create_signature_block(seal_type="falcon", add_signature=False):
+    """Создает блок с печатью и опционально подписью"""
+    # Загружаем оригинальную печать
+    seal = create_company_seal(seal_type)
     
-    # Текст по кругу - название компании
-    company_text = "ФАЛКОН-ТРАНС"
-    text_radius = radius - 8
+    # Масштабирование с сохранением пропорций (как в pdf_processor.py)
+    original_width, original_height = seal.size
+    max_width = 176  # Финальный размер из pdf_processor.py
+    max_height = 136  # Финальный размер из pdf_processor.py
     
-    # Размещаем текст по кругу
-    for i, char in enumerate(company_text):
-        angle = (i * 360 / len(company_text)) - 90  # Начинаем сверху
-        x = center + int(text_radius * (angle * 3.14159 / 180))
-        y = center + int(text_radius * (angle * 3.14159 / 180))
-        draw.text((x-5, y-5), char, fill=(0, 0, 255, 255), font=font_small)
+    # Вычисляем коэффициент масштабирования (как в pdf_processor.py)
+    width_ratio = max_width / original_width
+    height_ratio = max_height / original_height
+    scale_factor = min(width_ratio, height_ratio)  # Меньший коэффициент для сохранения пропорций
     
-    # Центральный символ (звезда)
-    star_points = []
-    for i in range(5):
-        angle = i * 72 - 90
-        x = center + int(15 * (angle * 3.14159 / 180))
-        y = center + int(15 * (angle * 3.14159 / 180))
-        star_points.extend([x, y])
+    # Новые размеры
+    new_width = int(original_width * scale_factor)
+    new_height = int(original_height * scale_factor)
     
-    if len(star_points) >= 6:
-        draw.polygon(star_points, fill=(0, 0, 255, 255))
+    # Изменяем размер печати с высоким качеством (без размытия)
+    seal = seal.resize((new_width, new_height), Image.Resampling.LANCZOS)
+    
+    # Создаем изображение с прозрачным фоном
+    if add_signature:
+        # Если нужна подпись, создаем больший блок
+        img = Image.new('RGBA', (new_width + 200, new_height + 100), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        
+        # Добавляем текст подписи
+        try:
+            font_large = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 20)
+            font_medium = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 14)
+        except:
+            font_large = ImageFont.load_default()
+            font_medium = ImageFont.load_default()
+        
+        # Текст "ПЕРЕВОЗЧИК" или "ИП"
+        title = "ИП" if seal_type == "ip" else "ПЕРЕВОЗЧИК"
+        draw.text((10, 10), title, fill=(0, 0, 0, 255), font=font_large)
+        
+        # Линия подписи
+        draw.line([(10, 50), (150, 50)], fill=(0, 0, 0, 255), width=2)
+        draw.text((10, 60), "подпись", fill=(0, 0, 0, 255), font=font_medium)
+        
+        # Размещаем печать справа
+        img.paste(seal, (new_width - 50, 10), seal)
+    else:
+        # Только печать
+        img = Image.new('RGBA', (new_width, new_height), (0, 0, 0, 0))
+        img.paste(seal, (0, 0), seal)
     
     return img
 
-def create_signature_block():
-    """Создает блок с подписью и печатью"""
-    # Создаем изображение блока подписи
-    width, height = 400, 200
-    img = Image.new('RGBA', (width, height), (255, 255, 255, 0))
-    draw = ImageDraw.Draw(img)
+def find_signature_position(page_text):
+    """Интеллектуальный поиск позиции для печати"""
+    signature_patterns = ['подпись', 'podpis', 'подпи', 'signature']
+    signature_keywords = ['подпис', 'директор', 'заикин']
     
-    # Заголовок "ПЕРЕВОЗЧИК"
-    try:
-        # Пытаемся использовать системный шрифт
-        font_large = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 24)
-        font_medium = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 16)
-        font_small = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 12)
-    except:
-        # Fallback на стандартный шрифт
-        font_large = ImageFont.load_default()
-        font_medium = ImageFont.load_default()
-        font_small = ImageFont.load_default()
+    # Ищем паттерны в тексте
+    signature_x = None
+    signature_y = None
     
-    # Заголовок
-    draw.text((width//2 - 60, 20), "ПЕРЕВОЗЧИК", fill=(0, 0, 0, 255), font=font_large)
+    # Простой поиск по ключевым словам
+    for pattern in signature_patterns + signature_keywords:
+        if pattern.lower() in page_text.lower():
+            # Если найдено, используем позицию на 1.5см выше и 3см левее
+            return 50, 300  # x=50 (3см левее), y=300 (1.5см выше)
     
-    # Линия для подписи
-    draw.line([(50, 80), (200, 80)], fill=(0, 0, 0, 255), width=2)
-    draw.text((50, 90), "Генеральный директор", fill=(0, 0, 0, 255), font=font_medium)
-    draw.text((50, 110), "подпись", fill=(0, 0, 0, 255), font=font_small)
-    
-    # Имя директора
-    draw.text((220, 80), f"/{DIRECTOR_NAME}/", fill=(0, 0, 0, 255), font=font_medium)
-    draw.text((220, 100), "ФИО", fill=(0, 0, 0, 255), font=font_small)
-    
-    # Добавляем печать
-    seal = create_company_seal()
-    seal = seal.resize((120, 120))
-    img.paste(seal, (150, 60), seal)
-    
-    return img
+    # Если ничего не найдено, возвращаем резервную позицию
+    return 20, 200  # Резервная позиция (левее и выше)
 
-def add_signature_to_pdf(input_pdf_path, output_pdf_path):
-    """Добавляет подпись и печать к PDF"""
+def add_signature_to_pdf(input_pdf_path, output_pdf_path, seal_type="falcon", add_signature=False):
+    """Добавляет подпись и печать к PDF на последней странице"""
     # Читаем исходный PDF
     reader = PdfReader(input_pdf_path)
     writer = PdfWriter()
@@ -127,26 +167,40 @@ def add_signature_to_pdf(input_pdf_path, output_pdf_path):
     page_width = float(page.mediabox.width)
     page_height = float(page.mediabox.height)
     
-    # Создаем блок подписи
-    signature_block = create_signature_block()
+    # Извлекаем текст с последней страницы для поиска позиции
+    last_page = reader.pages[-1]
+    try:
+        page_text = last_page.extract_text()
+    except:
+        page_text = ""
     
-    # Сохраняем блок подписи во временный файл
+    # Интеллектуальный поиск позиции
+    x_position, y_position = find_signature_position(page_text)
+    
+    # Создаем блок подписи
+    signature_block = create_signature_block(seal_type, add_signature)
+    
+    # Сохраняем блок подписи во временный файл с высоким качеством
     with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
-        signature_block.save(tmp_file.name, 'PNG')
+        signature_block.save(tmp_file.name, 'PNG', optimize=False, compress_level=0)
         signature_path = tmp_file.name
     
     # Создаем PDF с подписью
     packet = io.BytesIO()
     can = canvas.Canvas(packet, pagesize=(page_width, page_height))
     
-    # Добавляем изображение подписи в правый нижний угол
-    signature_width = 200
-    signature_height = 100
-    x_position = page_width - signature_width - 50
-    y_position = 50
+    # Получаем размеры печати из созданного изображения
+    signature_width = signature_block.size[0]
+    signature_height = signature_block.size[1]
     
+    # Проверяем, что позиция не выходит за границы страницы
+    if y_position > page_height - signature_height:
+        y_position = page_height * 0.25  # 25% от высоты страницы
+    
+    # Добавляем изображение с поддержкой прозрачности
     can.drawImage(signature_path, x_position, y_position, 
-                 width=signature_width, height=signature_height)
+                 width=signature_width, height=signature_height,
+                 mask='auto')  # Поддержка прозрачности
     can.save()
     
     # Получаем PDF с подписью
@@ -156,7 +210,7 @@ def add_signature_to_pdf(input_pdf_path, output_pdf_path):
     # Объединяем страницы
     for page_num in range(len(reader.pages)):
         page = reader.pages[page_num]
-        if page_num == 0:  # Добавляем подпись только на первую страницу
+        if page_num == len(reader.pages) - 1:  # Добавляем подпись на последнюю страницу
             page.merge_page(signature_pdf.pages[0])
         writer.add_page(page)
     
@@ -171,6 +225,18 @@ def add_signature_to_pdf(input_pdf_path, output_pdf_path):
 def index():
     return render_template('index.html')
 
+@app.route('/test')
+def test():
+    return send_file('test_upload.html')
+
+@app.route('/simple')
+def simple():
+    return render_template('simple.html')
+
+@app.route('/editor')
+def editor():
+    return render_template('editor.html')
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
@@ -183,6 +249,10 @@ def upload_file():
     if not file.filename.lower().endswith('.pdf'):
         return jsonify({'error': 'Пожалуйста, загрузите PDF файл'}), 400
     
+    # Получаем параметры из формы
+    seal_type = request.form.get('seal_type', 'falcon')
+    add_signature = request.form.get('add_signature', 'false').lower() == 'true'
+    
     try:
         # Сохраняем загруженный файл
         filename = secure_filename(file.filename)
@@ -194,8 +264,8 @@ def upload_file():
         output_filename = f"{name}_с_подписью{ext}"
         output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
         
-        # Добавляем подпись
-        add_signature_to_pdf(input_path, output_path)
+        # Добавляем подпись с выбранными параметрами
+        add_signature_to_pdf(input_path, output_path, seal_type, add_signature)
         
         # Удаляем исходный файл
         os.unlink(input_path)

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест загрузки файлов</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .upload-area { border: 2px dashed #ccc; padding: 20px; text-align: center; margin: 20px 0; }
+        .upload-area.dragover { border-color: #007bff; background: #f8f9fa; }
+        .result { margin: 20px 0; padding: 10px; border-radius: 5px; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <h1>Тест загрузки файлов</h1>
+    
+    <div class="upload-area" id="uploadArea">
+        <h3>Перетащите PDF файл сюда или нажмите для выбора</h3>
+        <input type="file" id="fileInput" accept=".pdf" style="display: none;">
+        <button onclick="document.getElementById('fileInput').click()">Выбрать файл</button>
+    </div>
+    
+    <div id="result"></div>
+    
+    <script>
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const result = document.getElementById('result');
+        
+        // Drag and drop
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+        
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+        
+        // File input
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+        
+        function handleFile(file) {
+            console.log('Обработка файла:', file.name, file.type, file.size);
+            
+            // Проверка типа файла
+            if (!file.type.includes('pdf') && !file.name.toLowerCase().endsWith('.pdf')) {
+                showResult('Ошибка: выберите PDF файл', 'error');
+                return;
+            }
+            
+            // Проверка размера
+            if (file.size > 16 * 1024 * 1024) {
+                showResult('Ошибка: файл слишком большой (максимум 16 МБ)', 'error');
+                return;
+            }
+            
+            showResult('Файл прошел валидацию: ' + file.name, 'success');
+            
+            // Попытка загрузки на сервер
+            uploadFile(file);
+        }
+        
+        function uploadFile(file) {
+            showResult('Загружаем файл на сервер...', 'success');
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                console.log('Ответ сервера:', response.status);
+                return response.json();
+            })
+            .then(data => {
+                console.log('Данные ответа:', data);
+                if (data.success) {
+                    showResult('Успех! Файл обработан: ' + data.filename, 'success');
+                } else {
+                    showResult('Ошибка: ' + (data.error || 'Неизвестная ошибка'), 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Ошибка загрузки:', error);
+                showResult('Ошибка соединения с сервером', 'error');
+            });
+        }
+        
+        function showResult(message, type) {
+            result.innerHTML = `<div class="result ${type}">${message}</div>`;
+        }
+        
+        // Инициализация
+        console.log('Тестовая страница загружена');
+        console.log('uploadArea:', uploadArea);
+        console.log('fileInput:', fileInput);
+    </script>
+</body>
+</html> 
