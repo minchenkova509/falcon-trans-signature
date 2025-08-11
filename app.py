@@ -386,13 +386,9 @@ def save_document():
                             x_scaled = x * scale_x
                             
                             # Инвертируем Y координату (браузер сверху вниз, ReportLab снизу вверх)
-                            if page_num == 1:  # Вторая страница
-                                # Для второй страницы корректируем Y координату
-                                page_height = iframe_height / 2  # Высота одной страницы в iframe
-                                adjusted_y = y - page_height  # Смещаем относительно второй страницы
-                                y_scaled = 842 - (adjusted_y * scale_y) - (height * scale_y)
-                            else:  # Первая страница
-                                y_scaled = 842 - (y * scale_y) - (height * scale_y)
+                            # Инвертируем Y координату (браузер сверху вниз, ReportLab снизу вверх)
+                            # Y координата уже скорректирована на клиенте для второй страницы
+                            y_scaled = 842 - (y * scale_y) - (height * scale_y)
                             
                             width_scaled = width * scale_x
                             height_scaled = height * scale_y
