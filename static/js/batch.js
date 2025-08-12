@@ -1,42 +1,68 @@
 // Глобальные переменные
-let selectedFiles = [];
-let processedResults = [];
+let filesQueue = [];
 
 // Инициализация при загрузке страницы
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Инициализация пакетной обработки');
     
-    initializeDragAndDrop();
-    initializeFileInput();
+    initializeReliableUpload();
     initializeButtons();
     updateSealPreview();
 });
 
-// Инициализация drag and drop
-function initializeDragAndDrop() {
-    const dropZone = document.getElementById('dropZone');
-    
-    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-        dropZone.addEventListener(eventName, preventDefaults, false);
-        document.body.addEventListener(eventName, preventDefaults, false);
-    });
-    
-    ['dragenter', 'dragover'].forEach(eventName => {
-        dropZone.addEventListener(eventName, highlight, false);
-    });
-    
-    ['dragleave', 'drop'].forEach(eventName => {
-        dropZone.addEventListener(eventName, unhighlight, false);
-    });
-    
-    dropZone.addEventListener('drop', handleDrop, false);
-    dropZone.addEventListener('click', () => document.getElementById('fileInput').click());
-}
+// Надежная инициализация загрузки файлов
+function initializeReliableUpload() {
+    const dropzone = document.getElementById('dropzone');
+    const input    = document.getElementById('fileInput');
+    const pickBtn  = document.getElementById('pickBtn');
+    const list     = document.getElementById('fileList');
+    const runBtn   = document.getElementById('runBatch');
 
-// Инициализация input файла
-function initializeFileInput() {
-    const fileInput = document.getElementById('fileInput');
-    fileInput.addEventListener('change', handleFileSelect);
+    function renderList() {
+        list.innerHTML = '';
+        filesQueue.forEach(f => {
+            const li = document.createElement('li');
+            li.className = 'file-item';
+            li.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-file-pdf me-2"></i>${f.name} (${Math.round(f.size/1024)} KB)</span>
+                    <button class="btn btn-sm btn-outline-danger" onclick="removeFile('${f.name}')">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `;
+            list.appendChild(li);
+        });
+        runBtn.disabled = filesQueue.length === 0;
+    }
+
+    function addFiles(fileList) {
+        for (const f of fileList) {
+            if (f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')) {
+                // Проверяем, не добавлен ли уже этот файл
+                if (!filesQueue.find(existing => existing.name === f.name && existing.size === f.size)) {
+                    filesQueue.push(f);
+                }
+            }
+        }
+        renderList();
+    }
+
+    function removeFile(fileName) {
+        filesQueue = filesQueue.filter(f => f.name !== fileName);
+        renderList();
+    }
+
+    // Экспортируем функцию удаления в глобальную область
+    window.removeFile = removeFile;
+
+    // DnD: Safari требует preventDefault на dragover/dragenter/dragleave/drop
+    ['dragenter','dragover','dragleave','drop'].forEach(ev =>
+        dropzone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); }, {passive:false})
+    );
+    dropzone.addEventListener('drop', e => addFiles(e.dataTransfer.files));
+    pickBtn.addEventListener('click', () => input.click());
+    input.addEventListener('change', e => addFiles(e.target.files));
 }
 
 // Инициализация кнопок
@@ -44,8 +70,8 @@ function initializeButtons() {
     // Кнопка применения стандартных координат
     document.getElementById('applyStandardCoords').addEventListener('click', applyStandardCoordinates);
     
-    // Кнопка обработки файлов
-    document.getElementById('processFiles').addEventListener('click', processFiles);
+    // Кнопка обработки файлов (новая надежная версия)
+    document.getElementById('runBatch').addEventListener('click', processFilesReliable);
     
     // Кнопка скачивания всех файлов
     document.getElementById('downloadAllBtn').addEventListener('click', downloadAllFiles);
@@ -60,88 +86,115 @@ function initializeButtons() {
     document.getElementById('addSignature').addEventListener('change', updateSealPreview);
 }
 
-// Предотвращение стандартного поведения браузера
-function preventDefaults(e) {
-    e.preventDefault();
-    e.stopPropagation();
-}
-
-// Подсветка области загрузки
-function highlight(e) {
-    document.getElementById('dropZone').classList.add('dragover');
-}
-
-// Убираем подсветку
-function unhighlight(e) {
-    document.getElementById('dropZone').classList.remove('dragover');
-}
-
-// Обработка сброса файлов
-function handleDrop(e) {
-    const dt = e.dataTransfer;
-    const files = dt.files;
+// Надежная обработка файлов
+function processFilesReliable() {
+    if (!filesQueue.length) return;
     
-    if (files.length > 0) {
-        handleFiles(Array.from(files));
-    }
+    const runBtn = document.getElementById('runBatch');
+    runBtn.disabled = true;
+    runBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>ОБРАБОТКА...';
+
+    // координаты из UI (мм) — подставляем наши значения
+    const mmToPt = 2.83465;
+    const coordinates = {
+        x: parseFloat(document.getElementById('coordX').value || 17.6) * mmToPt,
+        y: parseFloat(document.getElementById('coordY').value || 67.6) * mmToPt,  // 17.6 + 50 (SHIFT_MM)
+        width: parseFloat(document.getElementById('coordWidth').value || 46.4) * mmToPt,  // 17.6 * 2.64 (SCALE)
+        height: parseFloat(document.getElementById('coordHeight').value || 35.9) * mmToPt  // 13.6 * 2.64 (SCALE)
+    };
+
+    const fd = new FormData();
+    for (const f of filesQueue) fd.append('files', f); // КЛЮЧ ДОЛЖЕН БЫТЬ 'files'
+    fd.append('config', JSON.stringify(coordinates));
+
+    // Показываем прогресс
+    showProgress('Отправка файлов на сервер...');
+
+    fetch('/batch-stamp', { method: 'POST', body: fd })
+        .then(r => {
+            const ct = r.headers.get('content-type') || '';
+            if (!r.ok) {
+                const err = ct.includes('application/json') ? r.json() : r.text();
+                return err.then(errorData => {
+                    throw new Error('Ошибка сервера: ' + (errorData.error || r.statusText));
+                });
+            }
+            return r.blob(); // ждём ZIP
+        })
+        .then(blob => {
+            // Скачиваем ZIP
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'stamped_batch.zip';
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+            
+            showSuccess(`Обработано ${filesQueue.length} файлов. ZIP скачан.`);
+        })
+        .catch(e => {
+            console.error(e);
+            showError('Ошибка: ' + e.message);
+        })
+        .finally(() => {
+            runBtn.disabled = false;
+            runBtn.innerHTML = '<i class="fas fa-cogs me-2"></i>ОБРАБОТАТЬ ФАЙЛЫ';
+        });
 }
 
-// Обработка выбора файлов
-function handleFileSelect(e) {
-    const files = Array.from(e.target.files);
-    handleFiles(files);
+function showProgress(message) {
+    const progressContainer = document.getElementById('progressContainer');
+    const progressText = document.getElementById('progressText');
+    progressContainer.classList.remove('d-none');
+    progressText.textContent = message;
 }
 
-// Обработка файлов
-function handleFiles(files) {
-    const pdfFiles = files.filter(file => file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'));
+function showSuccess(message) {
+    const resultsContainer = document.getElementById('resultsContainer');
+    const processedCount = document.getElementById('processedCount');
+    const totalCount = document.getElementById('totalCount');
     
-    if (pdfFiles.length === 0) {
-        alert('Пожалуйста, выберите PDF файлы');
-        return;
-    }
+    processedCount.textContent = filesQueue.length;
+    totalCount.textContent = filesQueue.length;
     
-    // Добавляем файлы к списку
-    selectedFiles = selectedFiles.concat(pdfFiles);
-    updateFileList();
-    updateProcessButton();
+    resultsContainer.classList.remove('d-none');
+    resultsContainer.querySelector('.alert-success h6').innerHTML = 
+        '<i class="fas fa-check-circle me-2"></i>' + message;
 }
 
-// Обновление списка файлов
-function updateFileList() {
-    const fileList = document.getElementById('fileList');
-    fileList.innerHTML = '';
+function showError(message) {
+    const resultsContainer = document.getElementById('resultsContainer');
+    resultsContainer.classList.remove('d-none');
+    resultsContainer.innerHTML = `
+        <div class="alert alert-danger">
+            <h6><i class="fas fa-exclamation-triangle me-2"></i>Ошибка обработки</h6>
+            <p>${message}</p>
+        </div>
+    `;
+}
+
+// Удаление файла из списка (обновленная версия)
+function removeFile(fileName) {
+    filesQueue = filesQueue.filter(f => f.name !== fileName);
+    const list = document.getElementById('fileList');
+    const runBtn = document.getElementById('runBatch');
     
-    selectedFiles.forEach((file, index) => {
-        const fileItem = document.createElement('div');
-        fileItem.className = 'file-item';
-        fileItem.innerHTML = `
+    // Обновляем список
+    list.innerHTML = '';
+    filesQueue.forEach(f => {
+        const li = document.createElement('li');
+        li.className = 'file-item';
+        li.innerHTML = `
             <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <i class="fas fa-file-pdf text-danger me-2"></i>
-                    <strong>${file.name}</strong>
-                    <small class="text-muted ms-2">(${formatFileSize(file.size)})</small>
-                </div>
-                <button class="btn btn-outline-danger btn-sm" onclick="removeFile(${index})">
+                <span><i class="fas fa-file-pdf me-2"></i>${f.name} (${Math.round(f.size/1024)} KB)</span>
+                <button class="btn btn-sm btn-outline-danger" onclick="removeFile('${f.name}')">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
         `;
-        fileList.appendChild(fileItem);
+        list.appendChild(li);
     });
-}
-
-// Удаление файла из списка
-function removeFile(index) {
-    selectedFiles.splice(index, 1);
-    updateFileList();
-    updateProcessButton();
-}
-
-// Обновление кнопки обработки
-function updateProcessButton() {
-    const processBtn = document.getElementById('processFiles');
-    processBtn.disabled = selectedFiles.length === 0;
+    
+    runBtn.disabled = filesQueue.length === 0;
 }
 
 // Применение стандартных координат

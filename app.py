@@ -149,7 +149,7 @@ SEAL_BYTES_IP = None
 SEAL_BYTES_IP_SIGNATURE = None
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024  # 64MB max file size for batch processing
 app.config['UPLOAD_FOLDER'] = 'uploads'
 
 # Создаем папку для загрузок если её нет
@@ -995,6 +995,101 @@ def init_seal_cache():
 
 # Вызываем инициализацию
 init_seal_cache()
+
+@app.route('/batch-stamp', methods=['POST'])
+def batch_stamp():
+    """Обработка файлов через FormData с ключом 'files'"""
+    try:
+        files = request.files.getlist("files")  # КЛЮЧ 'files'
+        
+        if not files:
+            return jsonify({'error': 'Файлы не найдены'}), 400
+        
+        # Получаем конфигурацию
+        config_str = request.form.get('config', '{}')
+        try:
+            config = json.loads(config_str)
+        except json.JSONDecodeError:
+            config = {}
+        
+        # Параметры обработки
+        coordinates = config.get('coordinates', {})
+        seal_type = config.get('seal_type', 'falcon')
+        add_signature = config.get('add_signature', False)
+        
+        results = []
+        
+        for file in files:
+            try:
+                # Проверяем тип файла
+                if not file.filename.lower().endswith('.pdf'):
+                    results.append({
+                        'success': False,
+                        'filename': file.filename,
+                        'error': 'Не PDF файл'
+                    })
+                    continue
+                
+                # Создаем временные файлы
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_input:
+                    file.save(temp_input.name)
+                    input_path = temp_input.name
+                
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_output:
+                    output_path = temp_output.name
+                
+                try:
+                    # Обрабатываем файл
+                    add_signature_to_pdf_batch(input_path, output_path, seal_type, add_signature, coordinates)
+                    
+                    # Читаем результат
+                    with open(output_path, 'rb') as f:
+                        result_data = f.read()
+                    
+                    # Санитизируем имя файла
+                    name = secure_filename(Path(file.filename).stem) or "document"
+                    out_name = f"{name}_stamped.pdf"
+                    
+                    results.append({
+                        'success': True,
+                        'filename': out_name,
+                        'data': result_data,
+                        'size': len(result_data)
+                    })
+                    
+                finally:
+                    # Удаляем временные файлы
+                    if os.path.exists(input_path):
+                        os.unlink(input_path)
+                    if os.path.exists(output_path):
+                        os.unlink(output_path)
+                        
+            except Exception as e:
+                results.append({
+                    'success': False,
+                    'filename': file.filename,
+                    'error': str(e)
+                })
+        
+        # Создаем ZIP архив
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for result in results:
+                if result['success']:
+                    zip_file.writestr(result['filename'], result['data'])
+        
+        zip_buffer.seek(0)
+        
+        return send_file(
+            zip_buffer,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name='stamped_batch.zip'
+        )
+        
+    except Exception as e:
+        logging.exception("batch_stamp failed")
+        return jsonify({'error': f'Ошибка при обработке: {str(e)}'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080))) 
