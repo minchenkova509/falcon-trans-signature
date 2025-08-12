@@ -308,10 +308,22 @@ def seal_png_bytes(seal_type, add_signature=False):
 def initialize_seal_cache():
     """Инициализирует кеш печатей"""
     global SEAL_BYTES_FALCON, SEAL_BYTES_FALCON_SIGNATURE, SEAL_BYTES_IP, SEAL_BYTES_IP_SIGNATURE
-    SEAL_BYTES_FALCON = seal_png_bytes('falcon', False)
-    SEAL_BYTES_FALCON_SIGNATURE = seal_png_bytes('falcon', True)
-    SEAL_BYTES_IP = seal_png_bytes('ip', False)
-    SEAL_BYTES_IP_SIGNATURE = seal_png_bytes('ip', True)
+    try:
+        print("🔄 Initializing seal cache...")
+        SEAL_BYTES_FALCON = seal_png_bytes('falcon', False)
+        print(f"✅ FALCON seal: {len(SEAL_BYTES_FALCON)} bytes")
+        SEAL_BYTES_FALCON_SIGNATURE = seal_png_bytes('falcon', True)
+        print(f"✅ FALCON signature: {len(SEAL_BYTES_FALCON_SIGNATURE)} bytes")
+        SEAL_BYTES_IP = seal_png_bytes('ip', False)
+        print(f"✅ IP seal: {len(SEAL_BYTES_IP)} bytes")
+        SEAL_BYTES_IP_SIGNATURE = seal_png_bytes('ip', True)
+        print(f"✅ IP signature: {len(SEAL_BYTES_IP_SIGNATURE)} bytes")
+        print("🎉 Seal cache initialization completed successfully")
+    except Exception as e:
+        print(f"❌ Error initializing seal cache: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
 def create_signature_block(seal_type="falcon", add_signature=False):
     """Создает блок с печатью и опционально подписью"""
@@ -974,11 +986,15 @@ def batch_process_files():
         return jsonify({'error': f'Ошибка при пакетной обработке: {str(e)}'}), 500
 
 # Инициализируем кеш печатей после определения всех функций
-try:
-    initialize_seal_cache()
-    print("✅ Seal cache initialized successfully")
-except Exception as e:
-    print(f"❌ Failed to initialize seal cache: {e}")
+def init_seal_cache():
+    try:
+        initialize_seal_cache()
+        print("✅ Seal cache initialized successfully")
+    except Exception as e:
+        print(f"❌ Failed to initialize seal cache: {e}")
+
+# Вызываем инициализацию
+init_seal_cache()
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080))) 
