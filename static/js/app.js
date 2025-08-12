@@ -62,7 +62,15 @@ function initializeFileInput() {
 // Инициализация кнопки скачивания
 function initializeDownloadButton() {
     const downloadBtn = document.getElementById('downloadBtn');
-    downloadBtn.addEventListener('click', downloadFile);
+    if (downloadBtn) {
+        downloadBtn.addEventListener('click', downloadFile);
+    }
+    
+    // Инициализация кнопки статистики
+    const showStatsBtn = document.getElementById('showStatsBtn');
+    if (showStatsBtn) {
+        showStatsBtn.addEventListener('click', toggleStats);
+    }
 }
 
 // Предотвращение стандартного поведения браузера
@@ -336,3 +344,46 @@ window.addEventListener('beforeunload', function(e) {
         return e.returnValue;
     }
 }); 
+
+// Функции для работы со статистикой
+function toggleStats() {
+    const statsContainer = document.getElementById('statsContainer');
+    const showStatsBtn = document.getElementById('showStatsBtn');
+    
+    if (statsContainer.classList.contains('d-none')) {
+        // Показываем статистику
+        loadStats();
+        statsContainer.classList.remove('d-none');
+        showStatsBtn.innerHTML = '<i class="fas fa-eye-slash me-2"></i>Скрыть статистику';
+    } else {
+        // Скрываем статистику
+        statsContainer.classList.add('d-none');
+        showStatsBtn.innerHTML = '<i class="fas fa-chart-bar me-2"></i>Показать статистику';
+    }
+}
+
+function loadStats() {
+    fetch('/api/stats')
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                console.error('Ошибка загрузки статистики:', data.error);
+                return;
+            }
+            
+            // Обновляем элементы статистики
+            const processedFiles = document.getElementById('processedFiles');
+            const availableSeals = document.getElementById('availableSeals');
+            const serviceStatus = document.getElementById('serviceStatus');
+            
+            if (processedFiles) processedFiles.textContent = data.total_processed_files || 0;
+            if (availableSeals) availableSeals.textContent = data.available_seals || 0;
+            if (serviceStatus) {
+                serviceStatus.textContent = data.service_status === 'active' ? 'Активен' : 'Неактивен';
+                serviceStatus.className = data.service_status === 'active' ? 'h4 text-success' : 'h4 text-danger';
+            }
+        })
+        .catch(error => {
+            console.error('Ошибка при загрузке статистики:', error);
+        });
+} 
