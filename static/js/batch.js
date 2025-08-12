@@ -168,6 +168,13 @@ function applyStandardCoordinates() {
             document.getElementById('coordWidth').value = (coords.width * ptToMm).toFixed(1);
             document.getElementById('coordHeight').value = (coords.height * ptToMm).toFixed(1);
             
+            console.log('Применены координаты:', {
+                x: (coords.x * ptToMm).toFixed(1),
+                y: (coords.y * ptToMm).toFixed(1),
+                width: (coords.width * ptToMm).toFixed(1),
+                height: (coords.height * ptToMm).toFixed(1)
+            });
+            
             updateSealPreview();
         })
         .catch(error => {
@@ -214,10 +221,10 @@ async function processFiles() {
     // Координаты (конвертируем из мм в пункты)
     const mmToPt = 2.83465;
     const coordinates = {
-        x: parseFloat(document.getElementById('coordX').value || 0) * mmToPt,
-        y: parseFloat(document.getElementById('coordY').value || 0) * mmToPt,
-        width: parseFloat(document.getElementById('coordWidth').value || 17.6) * mmToPt,
-        height: parseFloat(document.getElementById('coordHeight').value || 13.6) * mmToPt
+        x: parseFloat(document.getElementById('coordX').value || 17.6) * mmToPt,
+        y: parseFloat(document.getElementById('coordY').value || 67.6) * mmToPt,  // 17.6 + 50 (SHIFT_MM)
+        width: parseFloat(document.getElementById('coordWidth').value || 46.4) * mmToPt,  // 17.6 * 2.64 (SCALE)
+        height: parseFloat(document.getElementById('coordHeight').value || 35.9) * mmToPt  // 13.6 * 2.64 (SCALE)
     };
     
     // Подготавливаем данные для отправки
