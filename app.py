@@ -307,9 +307,9 @@ def add_signature_to_pdf(input_pdf_path, output_pdf_path, seal_type="falcon", ad
     except:
         page_text = ""
 
-    # Интеллектуальный поиск позиции
-    x_position, y_position = find_signature_position(page_text)
-
+    # Используем стандартные координаты вместо интеллектуального поиска
+    coordinates = get_standard_seal_coordinates(page_width, page_height, seal_type, add_signature)
+    
     # Создаем PNG байты печати
     signature_block = create_signature_block(seal_type, add_signature)
     seal_bytes = pil_to_png_bytes(signature_block)
@@ -317,10 +317,6 @@ def add_signature_to_pdf(input_pdf_path, output_pdf_path, seal_type="falcon", ad
     # Получаем размеры печати из созданного изображения
     signature_width = signature_block.size[0]
     signature_height = signature_block.size[1]
-
-    # Проверяем, что позиция не выходит за границы страницы
-    if y_position > page_height - signature_height:
-        y_position = page_height * 0.25  # 25% от высоты страницы
 
     # Обрабатываем все страницы
     for page_num in range(len(reader.pages)):
@@ -331,10 +327,10 @@ def add_signature_to_pdf(input_pdf_path, output_pdf_path, seal_type="falcon", ad
             # Создаем items для merge_on_page
             items = [{
                 "png_bytes": seal_bytes,
-                "x": x_position,
-                "y": y_position,
-                "w": signature_width,
-                "h": signature_height
+                "x": coordinates['x'],
+                "y": coordinates['y'],
+                "w": coordinates['width'],
+                "h": coordinates['height']
             }]
             
             # Используем новую функцию для корректной обработки
