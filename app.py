@@ -155,6 +155,13 @@ app.config['UPLOAD_FOLDER'] = 'uploads'
 # Создаем папку для загрузок если её нет
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
+# Инициализируем кеш печатей при создании приложения (для Gunicorn)
+try:
+    # Инициализация будет выполнена после определения всех функций
+    pass
+except Exception as e:
+    print(f"Warning: Could not initialize seal cache during app creation: {e}")
+
 @app.errorhandler(413)
 def too_large(e):
     """Обработчик ошибки превышения размера файла"""
@@ -788,6 +795,10 @@ def save_document():
             if SEAL_BYTES_FALCON is None or SEAL_BYTES_IP is None:
                 logging.info("Кеш печатей не инициализирован, инициализируем...")
                 initialize_seal_cache()
+                # Дополнительная проверка после инициализации
+                if SEAL_BYTES_FALCON is None or SEAL_BYTES_IP is None:
+                    raise ValueError("Failed to initialize seal cache")
+                logging.info(f"Кеш инициализирован: FALCON={len(SEAL_BYTES_FALCON)} байт, IP={len(SEAL_BYTES_IP)} байт")
             
             # Читаем исходный PDF
             reader = PdfReader(temp_pdf_path)
@@ -962,7 +973,12 @@ def batch_process_files():
     except Exception as e:
         return jsonify({'error': f'Ошибка при пакетной обработке: {str(e)}'}), 500
 
-if __name__ == '__main__':
-    # Инициализируем кеш печатей при запуске
+# Инициализируем кеш печатей после определения всех функций
+try:
     initialize_seal_cache()
+    print("✅ Seal cache initialized successfully")
+except Exception as e:
+    print(f"❌ Failed to initialize seal cache: {e}")
+
+if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080))) 
