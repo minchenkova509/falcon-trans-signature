@@ -5,7 +5,7 @@ import io
 import time
 from pathlib import Path
 from PyPDF2 import PdfReader, PdfWriter
-from reportlab.pdfgen import canvas
+from reportlab.pdfgen import canvas as rl_canvas
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.lib.units import inch
 from reportlab.pdfbase import pdfmetrics
@@ -27,6 +27,54 @@ def mm(v):
 def pt_to_mm(v):
     """Конвертирует пункты в миллиметры"""
     return v * PT_TO_MM
+
+def pil_to_png_bytes(pil_img: Image.Image, opacity: float = 1.0) -> bytes:
+    """PIL.Image -> PNG bytes, с учётом общей прозрачности."""
+    img = pil_img.convert("RGBA")
+    if opacity < 0.999:
+        r,g,b,a = img.split()
+        a = a.point(lambda v: int(v * opacity))
+        img = Image.merge("RGBA", (r,g,b,a))
+    buf = io.BytesIO()
+    img.save(buf, "PNG", optimize=False, compress_level=0)
+    return buf.getvalue()
+
+def draw_png_bytes(c, png_bytes: bytes, x, y, w, h):
+    """Каждый вызов — НОВЫЙ BytesIO, иначе ReportLab может читать "середину" буфера."""
+    bio = io.BytesIO(png_bytes); bio.seek(0)
+    c.drawImage(ImageReader(bio), x, y, width=w, height=h, mask='auto')
+
+def make_overlay(page_w, page_h, items):
+    """items: [{png_bytes,x,y,w,h}] -> overlay PDF page"""
+    packet = io.BytesIO()
+    c = rl_canvas.Canvas(packet, pagesize=(page_w, page_h))
+    for it in items:
+        draw_png_bytes(c, it["png_bytes"], it["x"], it["y"], it["w"], it["h"])
+    c.showPage(); c.save(); packet.seek(0)
+    return PdfReader(packet).pages[0]
+
+def merge_on_page(page, items):
+    """Корректно учитываем CropBox и Rotate."""
+    pw, ph = float(page.mediabox.width), float(page.mediabox.height)
+
+    # CropBox-смещение
+    crop = page.cropbox
+    off_x = float(crop.lower_left[0]); off_y = float(crop.lower_left[1])
+    for it in items:
+        it["x"] += off_x
+        it["y"] += off_y
+
+    overlay_page = make_overlay(pw, ph, items)
+
+    # Поворот страницы
+    rotation = int(page.get("/Rotate", 0)) % 360
+    if rotation:
+        try:
+            overlay_page.rotate(rotation)
+        except Exception:
+            overlay_page.rotate_clockwise(rotation)
+
+    page.merge_page(overlay_page)
 
 # Предкеш PNG печатей для производительности (будет инициализирован после определения функций)
 SEAL_BYTES_FALCON = None
@@ -160,9 +208,7 @@ def create_company_seal(seal_type="falcon"):
 def seal_png_bytes(seal_type, add_signature=False):
     """Создает PNG байты печати для переиспользования"""
     img = create_signature_block(seal_type, add_signature)
-    buf = io.BytesIO()
-    img.save(buf, 'PNG', optimize=False, compress_level=0)
-    return buf.getvalue()
+    return pil_to_png_bytes(img)
 
 def initialize_seal_cache():
     """Инициализирует кеш печатей"""
@@ -264,17 +310,9 @@ def add_signature_to_pdf(input_pdf_path, output_pdf_path, seal_type="falcon", ad
     # Интеллектуальный поиск позиции
     x_position, y_position = find_signature_position(page_text)
 
-    # Создаем блок подписи
+    # Создаем PNG байты печати
     signature_block = create_signature_block(seal_type, add_signature)
-
-    # Сохраняем блок подписи во временный файл с высоким качеством
-    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
-        signature_block.save(tmp_file.name, 'PNG', optimize=False, compress_level=0)
-        signature_path = tmp_file.name
-
-    # Создаем PDF с подписью
-    packet = io.BytesIO()
-    can = canvas.Canvas(packet, pagesize=(page_width, page_height))
+    seal_bytes = pil_to_png_bytes(signature_block)
 
     # Получаем размеры печати из созданного изображения
     signature_width = signature_block.size[0]
@@ -284,21 +322,24 @@ def add_signature_to_pdf(input_pdf_path, output_pdf_path, seal_type="falcon", ad
     if y_position > page_height - signature_height:
         y_position = page_height * 0.25  # 25% от высоты страницы
 
-    # Добавляем изображение с поддержкой прозрачности
-    can.drawImage(signature_path, x_position, y_position,
-                 width=signature_width, height=signature_height,
-                 mask='auto')  # Поддержка прозрачности
-    can.save()
-
-    # Получаем PDF с подписью
-    packet.seek(0)
-    signature_pdf = PdfReader(packet)
-
-    # Объединяем страницы
+    # Обрабатываем все страницы
     for page_num in range(len(reader.pages)):
         page = reader.pages[page_num]
-        if page_num == len(reader.pages) - 1:  # Добавляем подпись на последнюю страницу
-            page.merge_page(signature_pdf.pages[0])
+        
+        # Добавляем подпись только на последнюю страницу
+        if page_num == len(reader.pages) - 1:
+            # Создаем items для merge_on_page
+            items = [{
+                "png_bytes": seal_bytes,
+                "x": x_position,
+                "y": y_position,
+                "w": signature_width,
+                "h": signature_height
+            }]
+            
+            # Используем новую функцию для корректной обработки
+            merge_on_page(page, items)
+        
         writer.add_page(page)
 
     # Сохраняем результат
@@ -401,75 +442,29 @@ def add_signature_to_pdf_batch(input_pdf_path, output_pdf_path, seal_type="falco
         else:
             seal_bytes = SEAL_BYTES_IP
     
-    try:
-        # Создаем PDF с подписью
-        packet = io.BytesIO()
-        can = canvas.Canvas(packet, pagesize=(page_width, page_height))
+    # Обрабатываем все страницы
+    for page_num in range(len(reader.pages)):
+        page = reader.pages[page_num]
         
-        # Добавляем изображение с указанными координатами
-        can.drawImage(ImageReader(io.BytesIO(seal_bytes)), 
-                     coordinates['x'], coordinates['y'],
-                     width=coordinates['width'], height=coordinates['height'],
-                     mask='auto')  # Поддержка прозрачности
-        can.save()
-        
-        # Получаем PDF с подписью
-        packet.seek(0)
-        signature_pdf = PdfReader(packet)
-        
-        # Объединяем страницы
-        for page_num in range(len(reader.pages)):
-            page = reader.pages[page_num]
-            if page_num == len(reader.pages) - 1:  # Добавляем подпись на последнюю страницу
-                # Получаем ротацию страницы
-                rotation = int(page.get('/Rotate', 0)) % 360
-                
-                # Учитываем CropBox смещение
-                crop = page.cropbox
-                x_offset = float(crop.lower_left[0])
-                y_offset = float(crop.lower_left[1])
-                
-                # Учитываем CropBox смещение
-                crop = page.cropbox
-                x_offset = float(crop.lower_left[0])
-                y_offset = float(crop.lower_left[1])
-                
-                # Смещаем координаты на CropBox оффсет
-                adjusted_coordinates = {
-                    'x': coordinates['x'] + x_offset,
-                    'y': coordinates['y'] + y_offset,
-                    'width': coordinates['width'],
-                    'height': coordinates['height']
-                }
-                
-                # Создаем оверлей с правильными координатами
-                overlay_packet = io.BytesIO()
-                overlay_can = canvas.Canvas(overlay_packet, pagesize=(page_width, page_height))
-                overlay_can.drawImage(ImageReader(io.BytesIO(seal_bytes)), 
-                                    adjusted_coordinates['x'], adjusted_coordinates['y'],
-                                    width=adjusted_coordinates['width'], height=adjusted_coordinates['height'],
-                                    mask='auto')
-                overlay_can.save()
-                overlay_packet.seek(0)
-                final_overlay = PdfReader(overlay_packet)
-                final_overlay_page = final_overlay.pages[0]
-                
-                # Поворачиваем оверлей если страница повернута
-                if rotation:
-                    final_overlay_page.rotate(rotation)
-                
-                page.merge_page(final_overlay_page)
-            writer.add_page(page)
-        
-        # Сохраняем результат
-        with open(output_pdf_path, 'wb') as output_file:
-            writer.write(output_file)
+        # Добавляем подпись только на последнюю страницу
+        if page_num == len(reader.pages) - 1:
+            # Создаем items для merge_on_page
+            items = [{
+                "png_bytes": seal_bytes,
+                "x": coordinates['x'],
+                "y": coordinates['y'],
+                "w": coordinates['width'],
+                "h": coordinates['height']
+            }]
             
-    finally:
-        # Очищаем буферы
-        packet.close()
-        if 'overlay_packet' in locals():
-            overlay_packet.close()
+            # Используем новую функцию для корректной обработки
+            merge_on_page(page, items)
+        
+        writer.add_page(page)
+    
+    # Сохраняем результат
+    with open(output_pdf_path, 'wb') as output_file:
+        writer.write(output_file)
 
 def cleanup_old_files():
     """Очищает старые файлы из папки uploads (старше 1 часа)"""
