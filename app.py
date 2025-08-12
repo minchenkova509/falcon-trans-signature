@@ -50,6 +50,14 @@ def pil_to_png_bytes(pil_img: Image.Image, opacity: float = 1.0) -> bytes:
 
 def draw_png_bytes(c, png_bytes: bytes, x, y, w, h):
     """Каждый вызов — НОВЫЙ BytesIO, иначе ReportLab может читать "середину" буфера."""
+    # Проверяем, что PNG байты корректны
+    if not png_bytes or len(png_bytes) < 100:
+        raise ValueError(f"Invalid PNG bytes: length={len(png_bytes) if png_bytes else 0}")
+    
+    # Проверяем, что это действительно PNG
+    if not png_bytes.startswith(b'\x89PNG\r\n\x1a\n'):
+        raise ValueError("Not a valid PNG file")
+    
     bio = io.BytesIO(png_bytes)
     bio.seek(0)
     c.drawImage(ImageReader(bio), x, y, width=w, height=h, mask='auto')
@@ -272,7 +280,22 @@ def create_company_seal(seal_type="falcon"):
 
 def seal_png_bytes(seal_type, add_signature=False):
     """Создает PNG байты печати для переиспользования"""
-    img = create_signature_block(seal_type, add_signature)
+    if add_signature:
+        img = create_signature_block(seal_type, add_signature)
+    else:
+        # Для простых печатей используем create_company_seal
+        img = create_company_seal(seal_type)
+        # Масштабируем до нужного размера
+        original_width, original_height = img.size
+        max_width = 176
+        max_height = 136
+        width_ratio = max_width / original_width
+        height_ratio = max_height / original_height
+        scale_factor = min(width_ratio, height_ratio)
+        new_width = int(original_width * scale_factor)
+        new_height = int(original_height * scale_factor)
+        img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+    
     return pil_to_png_bytes(img)
 
 def initialize_seal_cache():
@@ -761,6 +784,11 @@ def save_document():
             result_path = temp_result.name
 
         try:
+            # Проверяем инициализацию кеша печатей
+            if SEAL_BYTES_FALCON is None or SEAL_BYTES_IP is None:
+                logging.info("Кеш печатей не инициализирован, инициализируем...")
+                initialize_seal_cache()
+            
             # Читаем исходный PDF
             reader = PdfReader(temp_pdf_path)
             writer = PdfWriter()
@@ -781,9 +809,20 @@ def save_document():
                         if not all(key in seal and isinstance(seal[key], (int, float)) for key in required_keys):
                             raise ValueError(f"Invalid seal coordinates: {seal}")
                         
+                        # Выбираем правильные PNG байты
+                        seal_type = seal.get('type', 'falcon')
+                        if seal_type == 'falcon':
+                            png_bytes = SEAL_BYTES_FALCON
+                        else:  # ip
+                            png_bytes = SEAL_BYTES_IP
+                        
+                        # Проверяем, что PNG байты корректны
+                        if not png_bytes or len(png_bytes) < 100:
+                            raise ValueError(f"Invalid PNG bytes for seal type: {seal_type}")
+                        
                         # Конвертируем координаты из редактора в новый формат
                         items.append({
-                            "png_bytes": SEAL_BYTES_FALCON if seal.get('type', 'falcon') == 'falcon' else SEAL_BYTES_IP,
+                            "png_bytes": png_bytes,
                             "x": float(seal['xPt']),
                             "y": float(seal['yPt']),
                             "w": float(seal['wPt']),
