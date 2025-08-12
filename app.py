@@ -998,7 +998,7 @@ init_seal_cache()
 
 @app.route('/batch-stamp', methods=['POST'])
 def batch_stamp():
-    """Обработка файлов через FormData с ключом 'files'"""
+    """Обработка файлов через FormData с ключом 'files' - отдаем поштучно в JSON"""
     try:
         files = request.files.getlist("files")  # КЛЮЧ 'files'
         
@@ -1012,49 +1012,64 @@ def batch_stamp():
         except json.JSONDecodeError:
             config = {}
         
-        # Параметры обработки
-        coordinates = config.get('coordinates', {})
-        seal_type = config.get('seal_type', 'falcon')
-        add_signature = config.get('add_signature', False)
+        # Параметры обработки с дефолтами
+        x_mm = float(config.get('x', 17.6))
+        y_mm = float(config.get('y', 67.6))
+        w_mm = float(config.get('width', 46.4))
+        h_mm = float(config.get('height', 35.9))
+        opacity = float(config.get('opacity', 0.95))
         
-        results = []
+        items = []
         
         for file in files:
             try:
                 # Проверяем тип файла
                 if not file.filename.lower().endswith('.pdf'):
-                    results.append({
-                        'success': False,
+                    items.append({
                         'filename': file.filename,
+                        'ok': False,
                         'error': 'Не PDF файл'
                     })
                     continue
                 
+                # Читаем файл в байты
+                pdf_bytes = file.read()
+                
                 # Создаем временные файлы
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_input:
-                    file.save(temp_input.name)
+                    temp_input.write(pdf_bytes)
                     input_path = temp_input.name
                 
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_output:
                     output_path = temp_output.name
                 
                 try:
-                    # Обрабатываем файл
-                    add_signature_to_pdf_batch(input_path, output_path, seal_type, add_signature, coordinates)
+                    # Обрабатываем файл с нашими координатами
+                    coordinates = {
+                        'x': mm(x_mm),
+                        'y': mm(y_mm),
+                        'width': mm(w_mm),
+                        'height': mm(h_mm)
+                    }
+                    
+                    add_signature_to_pdf_batch(input_path, output_path, 'falcon', False, coordinates)
                     
                     # Читаем результат
                     with open(output_path, 'rb') as f:
-                        result_data = f.read()
+                        stamped_bytes = f.read()
+                    
+                    # Создаем data URL
+                    data_url = "data:application/pdf;base64," + base64.b64encode(stamped_bytes).decode("utf-8")
                     
                     # Санитизируем имя файла
                     name = secure_filename(Path(file.filename).stem) or "document"
                     out_name = f"{name}_stamped.pdf"
                     
-                    results.append({
-                        'success': True,
+                    items.append({
                         'filename': out_name,
-                        'data': result_data,
-                        'size': len(result_data)
+                        'ok': True,
+                        'pdfData': data_url,
+                        'size': len(stamped_bytes)
                     })
                     
                 finally:
@@ -1065,27 +1080,19 @@ def batch_stamp():
                         os.unlink(output_path)
                         
             except Exception as e:
-                results.append({
-                    'success': False,
+                logging.exception(f"Error processing {file.filename}")
+                items.append({
                     'filename': file.filename,
+                    'ok': False,
                     'error': str(e)
                 })
         
-        # Создаем ZIP архив
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-            for result in results:
-                if result['success']:
-                    zip_file.writestr(result['filename'], result['data'])
-        
-        zip_buffer.seek(0)
-        
-        return send_file(
-            zip_buffer,
-            mimetype='application/zip',
-            as_attachment=True,
-            download_name='stamped_batch.zip'
-        )
+        return jsonify({
+            "success": True, 
+            "items": items, 
+            "count": len(items), 
+            "ts": int(time.time())
+        })
         
     except Exception as e:
         logging.exception("batch_stamp failed")

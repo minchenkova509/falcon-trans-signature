@@ -112,24 +112,36 @@ function processFilesReliable() {
 
     fetch('/batch-stamp', { method: 'POST', body: fd })
         .then(r => {
-            const ct = r.headers.get('content-type') || '';
             if (!r.ok) {
-                const err = ct.includes('application/json') ? r.json() : r.text();
-                return err.then(errorData => {
+                return r.json().then(errorData => {
                     throw new Error('Ошибка сервера: ' + (errorData.error || r.statusText));
                 });
             }
-            return r.blob(); // ждём ZIP
+            return r.json(); // ждём JSON
         })
-        .then(blob => {
-            // Скачиваем ZIP
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = 'stamped_batch.zip';
-            a.click();
-            setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+        .then(res => {
+            if (!res.success) {
+                throw new Error('Ошибка обработки на сервере');
+            }
             
-            showSuccess(`Обработано ${filesQueue.length} файлов. ZIP скачан.`);
+            // Скачиваем только успешные файлы
+            const okItems = res.items.filter(it => it.ok);
+            if (!okItems.length) {
+                showError('Ни один файл не обработан');
+                return;
+            }
+            
+            // Скачиваем файлы по одному с паузами
+            downloadFilesSequentially(okItems);
+            
+            // Показываем ошибки по неудачным
+            const bad = res.items.filter(it => !it.ok);
+            if (bad.length) {
+                console.warn('Ошибки обработки:', bad);
+                showWarning(`Обработано ${okItems.length} из ${res.count} файлов. ${bad.length} файлов с ошибками.`);
+            } else {
+                showSuccess(`Обработано ${okItems.length} файлов. Все файлы скачаны.`);
+            }
         })
         .catch(e => {
             console.error(e);
@@ -170,6 +182,35 @@ function showError(message) {
             <p>${message}</p>
         </div>
     `;
+}
+
+function showWarning(message) {
+    const resultsContainer = document.getElementById('resultsContainer');
+    resultsContainer.classList.remove('d-none');
+    resultsContainer.innerHTML = `
+        <div class="alert alert-warning">
+            <h6><i class="fas fa-exclamation-triangle me-2"></i>Обработка завершена с предупреждениями</h6>
+            <p>${message}</p>
+        </div>
+    `;
+}
+
+// Скачиваем файлы по одному с паузами
+async function downloadFilesSequentially(items) {
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const a = document.createElement('a');
+        a.href = item.pdfData;
+        a.download = item.filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        
+        // Пауза между скачиваниями (чтобы браузер не заблокировал)
+        if (i < items.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 250));
+        }
+    }
 }
 
 // Удаление файла из списка (обновленная версия)
