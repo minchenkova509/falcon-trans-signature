@@ -20,6 +20,10 @@ import json
 MM_TO_PT = 72/25.4  # 1 мм = 2.83465 пунктов
 PT_TO_MM = 25.4/72  # 1 пункт = 0.352778 мм
 
+# Константы для смещения и масштабирования печати
+SHIFT_MM = 100      # поднять на 10 см
+SCALE = 2.0         # увеличить в 2 раза
+
 def mm(v):
     """Конвертирует миллиметры в пункты"""
     return v * MM_TO_PT
@@ -95,11 +99,15 @@ def merge_on_page(page, items):
     for i, it in enumerate(items):
         nx, ny, nw, nh = normalize_rect_visual_to_user(page, it["x"], it["y"], it["w"], it["h"])
         
+        # Подстраховка: не выйти за границы страницы
+        nx = max(0, min(nx, pw - nw))
+        ny = max(0, min(ny, ph - nh))
+        
         # Логирование для отладки
         print(f"rot= {int(page.get('/Rotate', 0))}, "
               f"in= ({it['x']:.2f}, {it['y']:.2f}, {it['w']:.2f}, {it['h']:.2f}), "
               f"norm= ({nx:.2f}, {ny:.2f}, {nw:.2f}, {nh:.2f}), "
-              f"mb= ({float(page.mediabox.width):.2f}, {float(page.mediabox.height):.2f}), "
+              f"mb= ({pw:.2f}, {ph:.2f}), "
               f"crop= ({float(page.cropbox.lower_left[0]):.2f}, {float(page.cropbox.lower_left[1]):.2f})")
         
         normalized_items.append({
@@ -411,16 +419,16 @@ def get_standard_seal_coordinates(page_width_pt, page_height_pt, seal_type="falc
         # Разделяем подпись и печать как два объекта
         signature = {
             'x': mm(MARGIN_LEFT_MM),
-            'y': mm(MARGIN_BOTTOM_MM),
-            'w': mm(SIGNATURE_WIDTH_MM),
-            'h': mm(SIGNATURE_HEIGHT_MM)
+            'y': mm(MARGIN_BOTTOM_MM + SHIFT_MM),  # поднимаем на SHIFT_MM
+            'w': mm(SIGNATURE_WIDTH_MM * SCALE),    # увеличиваем в SCALE раз
+            'h': mm(SIGNATURE_HEIGHT_MM * SCALE)    # увеличиваем в SCALE раз
         }
         
         seal = {
             'x': signature['x'] + signature['w'] + mm(GAP_MM),
             'y': signature['y'],
-            'w': mm(SEAL_WIDTH_MM),
-            'h': mm(SEAL_HEIGHT_MM)
+            'w': mm(SEAL_WIDTH_MM * SCALE),         # увеличиваем в SCALE раз
+            'h': mm(SEAL_HEIGHT_MM * SCALE)         # увеличиваем в SCALE раз
         }
         
         # Возвращаем общий блок, который включает и подпись, и печать
@@ -434,9 +442,9 @@ def get_standard_seal_coordinates(page_width_pt, page_height_pt, seal_type="falc
         # Только печать
         return {
             'x': mm(MARGIN_LEFT_MM),
-            'y': mm(MARGIN_BOTTOM_MM),
-            'width': mm(SEAL_WIDTH_MM),
-            'height': mm(SEAL_HEIGHT_MM)
+            'y': mm(MARGIN_BOTTOM_MM + SHIFT_MM),   # поднимаем на SHIFT_MM
+            'width': mm(SEAL_WIDTH_MM * SCALE),     # увеличиваем в SCALE раз
+            'height': mm(SEAL_HEIGHT_MM * SCALE)    # увеличиваем в SCALE раз
         }
 
 def add_signature_to_pdf_batch(input_pdf_path, output_pdf_path, seal_type="falcon", add_signature=False, coordinates=None):
