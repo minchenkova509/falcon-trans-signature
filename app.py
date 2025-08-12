@@ -346,9 +346,6 @@ def add_signature_to_pdf(input_pdf_path, output_pdf_path, seal_type="falcon", ad
     with open(output_pdf_path, 'wb') as output_file:
         writer.write(output_file)
 
-    # Удаляем временный файл
-    os.unlink(signature_path)
-
 def get_standard_seal_coordinates(page_width_pt, page_height_pt, seal_type="falcon", add_signature=False):
     """
     Возвращает стандартные координаты для печати и подписи на последней странице
