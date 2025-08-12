@@ -767,7 +767,12 @@
                 
                 const json = await r.json();
                 if (!json.success) {
-                    alert(json.error || 'Ошибка сохранения');
+                    // Показываем детальную ошибку
+                    let errorMessage = json.error || 'Ошибка сохранения';
+                    if (json.trace) {
+                        errorMessage += '\n\nПодробности:\n' + json.trace;
+                    }
+                    alert(errorMessage);
                     return;
                 }
                 

@@ -3,6 +3,8 @@ from werkzeug.utils import secure_filename
 import os
 import io
 import time
+import logging
+import traceback
 from pathlib import Path
 from PyPDF2 import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas as rl_canvas
@@ -15,6 +17,9 @@ import tempfile
 import base64
 from PIL import Image, ImageDraw, ImageFont
 import json
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
 
 # Константы для единиц измерения
 MM_TO_PT = 72/25.4  # 1 мм = 2.83465 пунктов
@@ -45,7 +50,8 @@ def pil_to_png_bytes(pil_img: Image.Image, opacity: float = 1.0) -> bytes:
 
 def draw_png_bytes(c, png_bytes: bytes, x, y, w, h):
     """Каждый вызов — НОВЫЙ BytesIO, иначе ReportLab может читать "середину" буфера."""
-    bio = io.BytesIO(png_bytes); bio.seek(0)
+    bio = io.BytesIO(png_bytes)
+    bio.seek(0)
     c.drawImage(ImageReader(bio), x, y, width=w, height=h, mask='auto')
 
 def make_overlay(page_w, page_h, items):
@@ -99,12 +105,16 @@ def merge_on_page(page, items):
     for i, it in enumerate(items):
         nx, ny, nw, nh = normalize_rect_visual_to_user(page, it["x"], it["y"], it["w"], it["h"])
         
-        # Подстраховка: не выйти за границы страницы
-        nx = max(0, min(nx, pw - nw))
-        ny = max(0, min(ny, ph - nh))
+        # Защитные бортики: clamp в границы страницы
+        nx = max(0.0, min(nx, pw - nw))
+        ny = max(0.0, min(ny, ph - nh))
+        
+        # Проверяем размеры
+        if nw <= 0 or nh <= 0 or nw > pw*2 or nh > ph*2:
+            raise ValueError(f"Invalid size: {(nw,nh)} for page {(pw,ph)}")
         
         # Логирование для отладки
-        print(f"rot= {int(page.get('/Rotate', 0))}, "
+        logging.info(f"rot= {int(page.get('/Rotate', 0))}, "
               f"in= ({it['x']:.2f}, {it['y']:.2f}, {it['w']:.2f}, {it['h']:.2f}), "
               f"norm= ({nx:.2f}, {ny:.2f}, {nw:.2f}, {nh:.2f}), "
               f"mb= ({pw:.2f}, {ph:.2f}), "
@@ -164,7 +174,7 @@ def _img_with_opacity(pil_img: Image.Image, opacity: float) -> Image.Image:
 def _make_overlay(page_w_pt, page_h_pt, seals_for_page, stamp_factory):
     """Создаёт PDF-оверлей размера страницы и рисует все печати."""
     packet = io.BytesIO()
-    c = canvas.Canvas(packet, pagesize=(page_w_pt, page_h_pt))
+    c = rl_canvas.Canvas(packet, pagesize=(page_w_pt, page_h_pt))
 
     for seal in seals_for_page:
         x_pt = float(seal['xPt'])
@@ -174,14 +184,21 @@ def _make_overlay(page_w_pt, page_h_pt, seals_for_page, stamp_factory):
         opacity = float(seal.get('opacity', 1.0))
         seal_type = seal.get('type', 'falcon')
 
-        pil_img = stamp_factory(seal_type)  # ваша create_company_seal(...)
-        pil_img = _img_with_opacity(pil_img, opacity)
+        # Используем предкешированные PNG байты
+        if seal_type == "falcon":
+            seal_bytes = SEAL_BYTES_FALCON
+        else:  # ip
+            seal_bytes = SEAL_BYTES_IP
 
-        buf = io.BytesIO()
-        pil_img.save(buf, 'PNG', optimize=False, compress_level=0)
-        buf.seek(0)
+        # Применяем прозрачность
+        if opacity < 0.999:
+            # Создаем временное изображение с прозрачностью
+            img = Image.open(io.BytesIO(seal_bytes))
+            img = _img_with_opacity(img, opacity)
+            seal_bytes = pil_to_png_bytes(img)
 
-        c.drawImage(ImageReader(buf), x_pt, y_pt, width=w_pt, height=h_pt, mask='auto')
+        # Рисуем с использованием новой функции
+        draw_png_bytes(c, seal_bytes, x_pt, y_pt, w_pt, h_pt)
 
     c.showPage()
     c.save()
@@ -713,11 +730,14 @@ def get_seal_coordinates():
 def save_document():
     """Сохраняет документ с наложенными печатями"""
     try:
-        data = request.get_json()
-        print(f"DEBUG: Получены данные: {len(data.get('seals', []))} печатей")
+        data = request.get_json(force=True)
+        logging.info(f"DEBUG: Получены данные: {len(data.get('seals', []))} печатей")
 
-        if not data or 'pdfData' not in data or 'seals' not in data:
-            return jsonify({'error': 'Неверные данные'}), 400
+        if not data or 'pdfData' not in data:
+            raise ValueError("Missing pdfData (base64) in request")
+
+        if 'seals' not in data or not isinstance(data['seals'], list):
+            raise ValueError("Missing or invalid 'seals' array")
 
         # Декодируем PDF из base64
         pdf_data_str = data['pdfData']
@@ -729,7 +749,7 @@ def save_document():
                 # Если это просто base64 строка
                 pdf_data = base64.b64decode(pdf_data_str)
         else:
-            return jsonify({'error': 'Неверный формат данных PDF'}), 400
+            raise ValueError("Неверный формат данных PDF")
 
         # Создаем временный файл для исходного PDF
         with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_pdf:
@@ -753,10 +773,25 @@ def save_document():
 
             for i, page in enumerate(reader.pages):
                 if i in seals_by_page:
-                    page_w_pt = float(page.mediabox.width)
-                    page_h_pt = float(page.mediabox.height)
-                    overlay = _make_overlay(page_w_pt, page_h_pt, seals_by_page[i], create_company_seal)
-                    page.merge_page(overlay.pages[0])  # flatten по сути
+                    # Используем новую систему координат
+                    items = []
+                    for seal in seals_by_page[i]:
+                        # Валидация координат
+                        required_keys = ['xPt', 'yPt', 'wPt', 'hPt']
+                        if not all(key in seal and isinstance(seal[key], (int, float)) for key in required_keys):
+                            raise ValueError(f"Invalid seal coordinates: {seal}")
+                        
+                        # Конвертируем координаты из редактора в новый формат
+                        items.append({
+                            "png_bytes": SEAL_BYTES_FALCON if seal.get('type', 'falcon') == 'falcon' else SEAL_BYTES_IP,
+                            "x": float(seal['xPt']),
+                            "y": float(seal['yPt']),
+                            "w": float(seal['wPt']),
+                            "h": float(seal['hPt'])
+                        })
+                    
+                    # Используем новую функцию merge_on_page
+                    merge_on_page(page, items)
                 writer.add_page(page)
 
             # Сохраняем результат
@@ -765,10 +800,10 @@ def save_document():
 
             # Проверяем размер файла
             file_size = os.path.getsize(result_path)
-            print(f"DEBUG: Размер созданного PDF: {file_size} байт")
+            logging.info(f"DEBUG: Размер созданного PDF: {file_size} байт")
 
             if file_size == 0:
-                return jsonify({'error': 'Создан пустой PDF файл'}), 500
+                raise ValueError("Создан пустой PDF файл")
 
             # Читаем результат и отправляем
             with open(result_path, 'rb') as f:
@@ -776,7 +811,7 @@ def save_document():
 
             # Кодируем в base64 для отправки
             result_base64 = base64.b64encode(result_data).decode('utf-8')
-            print(f"DEBUG: Размер base64 данных: {len(result_base64)} символов")
+            logging.info(f"DEBUG: Размер base64 данных: {len(result_base64)} символов")
 
             return jsonify({
                 'success': True,
@@ -792,8 +827,12 @@ def save_document():
                 os.unlink(result_path)
 
     except Exception as e:
-        print(f"Ошибка при сохранении документа: {e}")
-        return jsonify({'error': f'Ошибка при сохранении: {str(e)}'}), 500
+        logging.exception("save_document failed")
+        return jsonify({
+            'success': False,
+            'error': f'{e}',
+            'trace': traceback.format_exc()[:4000]  # чтобы увидеть корень
+        }), 400
 
 @app.route('/api/batch-process', methods=['POST'])
 def batch_process_files():
