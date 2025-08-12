@@ -538,6 +538,10 @@ def index():
 def test():
     return send_file('test_upload.html')
 
+@app.route('/test-batch')
+def test_batch():
+    return send_file('test_batch_upload.html')
+
 @app.route('/simple')
 def simple():
     return render_template('simple.html')

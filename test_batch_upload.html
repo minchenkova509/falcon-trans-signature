@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест пакетной обработки</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; }
+        .success { color: green; }
+        .error { color: red; }
+        button { padding: 10px; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Тест пакетной обработки</h1>
+    
+    <div class="test-section">
+        <h3>1. Тест API координат</h3>
+        <button onclick="testCoordinates()">Проверить координаты</button>
+        <div id="coordinatesResult"></div>
+    </div>
+    
+    <div class="test-section">
+        <h3>2. Тест загрузки файла</h3>
+        <input type="file" id="testFile" accept=".pdf" />
+        <button onclick="testFileUpload()">Тестировать загрузку</button>
+        <div id="uploadResult"></div>
+    </div>
+    
+    <div class="test-section">
+        <h3>3. Тест пакетной обработки</h3>
+        <button onclick="testBatchProcessing()">Тестировать пакетную обработку</button>
+        <div id="batchResult"></div>
+    </div>
+
+    <script>
+        // Тест API координат
+        async function testCoordinates() {
+            const resultDiv = document.getElementById('coordinatesResult');
+            try {
+                const response = await fetch('/api/coordinates?seal_type=falcon');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.innerHTML = `<div class="success">
+                        ✅ API координат работает<br>
+                        X: ${data.coordinates.x.toFixed(2)} pt<br>
+                        Y: ${data.coordinates.y.toFixed(2)} pt<br>
+                        Width: ${data.coordinates.width.toFixed(2)} pt<br>
+                        Height: ${data.coordinates.height.toFixed(2)} pt
+                    </div>`;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ Ошибка API: ${data.error}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ Ошибка сети: ${error.message}</div>`;
+            }
+        }
+
+        // Тест загрузки файла
+        function testFileUpload() {
+            const fileInput = document.getElementById('testFile');
+            const resultDiv = document.getElementById('uploadResult');
+            
+            if (fileInput.files.length === 0) {
+                resultDiv.innerHTML = '<div class="error">❌ Файл не выбран</div>';
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            if (file.type !== 'application/pdf') {
+                resultDiv.innerHTML = '<div class="error">❌ Выбран не PDF файл</div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = `<div class="success">
+                ✅ Файл загружен<br>
+                Имя: ${file.name}<br>
+                Размер: ${(file.size / 1024).toFixed(2)} KB<br>
+                Тип: ${file.type}
+            </div>`;
+        }
+
+        // Тест пакетной обработки
+        async function testBatchProcessing() {
+            const fileInput = document.getElementById('testFile');
+            const resultDiv = document.getElementById('batchResult');
+            
+            if (fileInput.files.length === 0) {
+                resultDiv.innerHTML = '<div class="error">❌ Сначала выберите файл</div>';
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            
+            try {
+                // Конвертируем файл в base64
+                const base64 = await fileToBase64(file);
+                
+                // Получаем координаты
+                const coordsResponse = await fetch('/api/coordinates?seal_type=falcon');
+                const coordsData = await coordsResponse.json();
+                
+                const requestData = {
+                    files: [{
+                        filename: file.name,
+                        pdfData: base64
+                    }],
+                    seal_type: 'falcon',
+                    add_signature: false,
+                    coordinates: coordsData.coordinates
+                };
+                
+                resultDiv.innerHTML = '<div>🔄 Обрабатываем файл...</div>';
+                
+                const response = await fetch('/api/batch-process', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    resultDiv.innerHTML = `<div class="success">
+                        ✅ Пакетная обработка работает<br>
+                        Обработано: ${result.processed_files}/${result.total_files} файлов<br>
+                        Первый результат: ${result.results[0].success ? 'Успешно' : 'Ошибка'}
+                    </div>`;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ Ошибка обработки: ${result.error}</div>`;
+                }
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ Ошибка: ${error.message}</div>`;
+            }
+        }
+
+        // Функция конвертации файла в base64
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+            });
+        }
+    </script>
+</body>
+</html> 
