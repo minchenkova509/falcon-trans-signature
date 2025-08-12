@@ -429,12 +429,10 @@ def add_signature_to_pdf_batch(input_pdf_path, output_pdf_path, seal_type="falco
                 x_offset = float(crop.lower_left[0])
                 y_offset = float(crop.lower_left[1])
                 
-                # Создаем оверлей с учетом ротации и смещения
-                overlay_page = signature_pdf.pages[0]
-                
-                # Поворачиваем оверлей если нужно
-                if rotation:
-                    overlay_page.rotate(rotation)
+                # Учитываем CropBox смещение
+                crop = page.cropbox
+                x_offset = float(crop.lower_left[0])
+                y_offset = float(crop.lower_left[1])
                 
                 # Смещаем координаты на CropBox оффсет
                 adjusted_coordinates = {
@@ -444,7 +442,7 @@ def add_signature_to_pdf_batch(input_pdf_path, output_pdf_path, seal_type="falco
                     'height': coordinates['height']
                 }
                 
-                # Создаем новый оверлей с правильными координатами
+                # Создаем оверлей с правильными координатами
                 overlay_packet = io.BytesIO()
                 overlay_can = canvas.Canvas(overlay_packet, pagesize=(page_width, page_height))
                 overlay_can.drawImage(ImageReader(io.BytesIO(seal_bytes)), 
@@ -454,9 +452,9 @@ def add_signature_to_pdf_batch(input_pdf_path, output_pdf_path, seal_type="falco
                 overlay_can.save()
                 overlay_packet.seek(0)
                 final_overlay = PdfReader(overlay_packet)
-                
-                # Поворачиваем финальный оверлей если нужно
                 final_overlay_page = final_overlay.pages[0]
+                
+                # Поворачиваем оверлей если страница повернута
                 if rotation:
                     final_overlay_page.rotate(rotation)
                 
