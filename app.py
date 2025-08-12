@@ -55,44 +55,36 @@ def make_overlay(page_w, page_h, items):
 
 def normalize_rect_visual_to_user(page, x, y, w, h):
     """
-    x,y,w,h — желаемые координаты в pt ОТ ВИЗУАЛЬНОГО нижнего-левого угла
-    (как вы задаёте в мм). Возвращает координаты в user space страницы,
-    учитывая /Rotate и CropBox. Для 90/270 меняем местами w<->h.
+    x,y,w,h — в pt от визуального нижнего-левого угла.
+    Возвращает координаты в user-space страницы с учётом /Rotate и CropBox.
+    Для 90°/270° корректно меняем w↔h.
     """
     pw = float(page.mediabox.width)
     ph = float(page.mediabox.height)
     rot = int(page.get("/Rotate", 0)) % 360
 
     if rot == 0:
-        x2, y2, w2, h2 = x, y, w, h
+        nx, ny, nw, nh = x, y, w, h
     elif rot == 90:
-        # визуальный (x,y,w,h) -> user space без поворота overlay
-        # оси меняются местами: ширина идёт по Y, высота — по X
-        x2 = y
-        y2 = pw - (x + w)
-        w2 = h   # swap
-        h2 = w   # swap
+        nx = y
+        ny = pw - (x + w)
+        nw, nh = h, w   # swap
     elif rot == 180:
-        x2 = pw - (x + w)
-        y2 = ph - (y + h)
-        w2 = w
-        h2 = h
+        nx = pw - (x + w)
+        ny = ph - (y + h)
+        nw, nh = w, h
     elif rot == 270:
-        x2 = ph - (y + h)
-        y2 = x
-        w2 = h   # swap
-        h2 = w   # swap
+        nx = ph - (y + h)
+        ny = x
+        nw, nh = h, w   # swap
     else:
-        x2, y2, w2, h2 = x, y, w, h
+        nx, ny, nw, nh = x, y, w, h
 
-    # учёт CropBox-смещения
+    # CropBox offset
     crop = page.cropbox
-    off_x = float(crop.lower_left[0])
-    off_y = float(crop.lower_left[1])
-    x2 += off_x
-    y2 += off_y
-
-    return x2, y2, w2, h2
+    nx += float(crop.lower_left[0])
+    ny += float(crop.lower_left[1])
+    return nx, ny, nw, nh
 
 def merge_on_page(page, items):
     """Корректно учитываем CropBox и Rotate без поворота оверлея."""
@@ -107,7 +99,8 @@ def merge_on_page(page, items):
         print(f"rot= {int(page.get('/Rotate', 0))}, "
               f"in= ({it['x']:.2f}, {it['y']:.2f}, {it['w']:.2f}, {it['h']:.2f}), "
               f"norm= ({nx:.2f}, {ny:.2f}, {nw:.2f}, {nh:.2f}), "
-              f"mb= ({float(page.mediabox.width):.2f}, {float(page.mediabox.height):.2f})")
+              f"mb= ({float(page.mediabox.width):.2f}, {float(page.mediabox.height):.2f}), "
+              f"crop= ({float(page.cropbox.lower_left[0]):.2f}, {float(page.cropbox.lower_left[1]):.2f})")
         
         normalized_items.append({
             "png_bytes": it["png_bytes"],
