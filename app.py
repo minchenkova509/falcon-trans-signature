@@ -53,27 +53,69 @@ def make_overlay(page_w, page_h, items):
     c.showPage(); c.save(); packet.seek(0)
     return PdfReader(packet).pages[0]
 
+def normalize_coords_for_page(page, x, y, w, h):
+    """
+    Принимает координаты в pt относительно визуально 'нижнего-левого угла'
+    (как ты задаёшь x_mm/y_mm), возвращает координаты в пользовательском
+    пространстве страницы с учётом /Rotate и CropBox.
+    """
+    pw, ph = float(page.mediabox.width), float(page.mediabox.height)
+    rot = int(page.get("/Rotate", 0)) % 360
+
+    # Преобразование координат под угол страницы (без поворота оверлея)
+    if rot == 0:
+        x2, y2 = x, y
+    elif rot == 90:
+        # (x,y) -> (y, pw - (x + w))
+        x2 = y
+        y2 = pw - (x + w)
+    elif rot == 180:
+        # (x,y) -> (pw - (x + w), ph - (y + h))
+        x2 = pw - (x + w)
+        y2 = ph - (y + h)
+    elif rot == 270:
+        # (x,y) -> (ph - (y + h), x)
+        x2 = ph - (y + h)
+        y2 = x
+    else:
+        x2, y2 = x, y  # на всякий
+
+    # Учёт CropBox-смещения
+    crop = page.cropbox
+    off_x = float(crop.lower_left[0])
+    off_y = float(crop.lower_left[1])
+    x2 += off_x
+    y2 += off_y
+
+    return x2, y2, w, h
+
 def merge_on_page(page, items):
-    """Корректно учитываем CropBox и Rotate."""
+    """Корректно учитываем CropBox и Rotate без поворота оверлея."""
     pw, ph = float(page.mediabox.width), float(page.mediabox.height)
 
-    # CropBox-смещение
-    crop = page.cropbox
-    off_x = float(crop.lower_left[0]); off_y = float(crop.lower_left[1])
-    for it in items:
-        it["x"] += off_x
-        it["y"] += off_y
+    # Нормализуем координаты для каждого элемента
+    normalized_items = []
+    for i, it in enumerate(items):
+        nx, ny, nw, nh = normalize_coords_for_page(page, it["x"], it["y"], it["w"], it["h"])
+        
+        # Логирование для отладки
+        print(f"page: {i}, rot: {int(page.get('/Rotate', 0))}, "
+              f"mediabox: {page.mediabox}, cropbox: {page.cropbox}, "
+              f"in: ({it['x']:.2f}, {it['y']:.2f}, {it['w']:.2f}, {it['h']:.2f}), "
+              f"norm: ({nx:.2f}, {ny:.2f}, {nw:.2f}, {nh:.2f})")
+        
+        normalized_items.append({
+            "png_bytes": it["png_bytes"],
+            "x": nx,
+            "y": ny,
+            "w": nw,
+            "h": nh
+        })
 
-    overlay_page = make_overlay(pw, ph, items)
+    # Создаем оверлей с нормализованными координатами
+    overlay_page = make_overlay(pw, ph, normalized_items)
 
-    # Поворот страницы
-    rotation = int(page.get("/Rotate", 0)) % 360
-    if rotation:
-        try:
-            overlay_page.rotate(rotation)
-        except Exception:
-            overlay_page.rotate_clockwise(rotation)
-
+    # НЕ поворачиваем оверлей - вся магия в пересчете координат
     page.merge_page(overlay_page)
 
 # Предкеш PNG печатей для производительности (будет инициализирован после определения функций)
